@@ -1,0 +1,7 @@
+{
+  "name": "Mini Universal POS",
+  "description": "Standalone offline-first Point-of-Sale system with IndexedDB, barcode scanning, inventory, reports, and receipt printing.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
+
