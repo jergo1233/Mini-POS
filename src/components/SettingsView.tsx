@@ -70,10 +70,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
       }
     } else {
       alert(
-        'To install this app on your device:\n\n' +
-        '• Android (Chrome): Tap the menu (3 dots) in your browser and select "Install app" or "Add to Home screen".\n' +
-        '• iPhone/iPad (Safari): Tap the Share button at the bottom and select "Add to Home Screen".\n' +
-        '• Desktop (Chrome/Edge): Click the install icon in the right side of the address bar.'
+        'Paano I-install sa Mobile at PC:\n\n' +
+        '• Android (Chrome): I-tap ang Menu (tatlong tuldok) sa itaas ng browser, pagkatapos ay piliin ang "Install app" o "Add to Home screen".\n\n' +
+        '• iPhone/iPad (Safari): I-tap ang Share button sa ibaba, pagkatapos ay piliin ang "Add to Home Screen".\n\n' +
+        '• PC / Laptop (Chrome/Edge): I-click ang Install icon sa kanang bahagi ng address bar o ang menu sa itaas.\n\n' +
+        'Paalala: Kung kasalukuyan kayong nasa AI Studio preview, buksan muna ang app sa isang bagong tab ng inyong browser.'
       );
     }
   };
