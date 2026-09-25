@@ -1,7 +1,7 @@
 /**
  * Settings View Component
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings as SettingsIcon,
   Store,
@@ -9,7 +9,8 @@ import {
   Download,
   Upload,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  Smartphone
 } from 'lucide-react';
 import {
   Settings,
@@ -47,6 +48,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
   const [lowStockThreshold, setLowStockThreshold] = useState(settings.lowStockThreshold);
   const [adminPin, setAdminPin] = useState(settings.adminPin);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      alert(
+        'To install this app on your device:\n\n' +
+        '• Android (Chrome): Tap the menu (3 dots) in your browser and select "Install app" or "Add to Home screen".\n' +
+        '• iPhone/iPad (Safari): Tap the Share button at the bottom and select "Add to Home Screen".\n' +
+        '• Desktop (Chrome/Edge): Click the install icon in the right side of the address bar.'
+      );
+    }
+  };
 
   // Admin PIN prompt state
   const [pinUnlocked, setPinUnlocked] = useState(false);
@@ -374,7 +404,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
           <h3 className="font-bold text-slate-900 dark:text-white">Local Database Backup & Restore</h3>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <button
             onClick={handleExportJSON}
             className="flex flex-col items-center justify-center p-5 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-center group"
@@ -394,6 +424,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
             <span className="text-xs text-slate-500 mt-1">Import database from file</span>
             <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
           </label>
+
+          <button
+            onClick={handleInstallApp}
+            className="flex flex-col items-center justify-center p-5 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition text-center group"
+          >
+            <div className="rounded-xl bg-indigo-50 dark:bg-indigo-950/50 p-3 text-indigo-600 mb-3 group-hover:scale-110 transition">
+              <Smartphone className="w-6 h-6" />
+            </div>
+            <span className="font-semibold text-sm text-indigo-600 dark:text-indigo-400">Install App</span>
+            <span className="text-xs text-slate-500 mt-1">Install as PWA on device</span>
+          </button>
 
           <button
             onClick={handleClearAll}
