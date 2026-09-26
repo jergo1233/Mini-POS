@@ -10,7 +10,7 @@ import {
   Plus,
   Minus
 } from 'lucide-react';
-import { Product, Category, Settings, saveProduct } from '../db/indexedDB';
+import { Product, Category, Settings, saveProduct, addProductHistoryLog } from '../db/indexedDB';
 import * as XLSX from 'xlsx';
 
 interface InventoryViewProps {
@@ -45,6 +45,19 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     };
     try {
       await saveProduct(updated);
+      await addProductHistoryLog({
+        productId: product.id,
+        productName: product.name,
+        barcode: product.barcode,
+        sku: product.sku,
+        action: delta > 0 ? 'restock' : 'edit',
+        details: delta > 0
+          ? `Restocked +${delta} units from Inventory view (Stock: ${product.stock} → ${newStock})`
+          : `Decreased stock by ${Math.abs(delta)} units (Stock: ${product.stock} → ${newStock})`,
+        stockBefore: product.stock,
+        stockAfter: newStock,
+        stockAdded: delta > 0 ? delta : undefined,
+      });
       onRefresh();
     } catch (err) {
       console.error('Adjust stock error:', err);
