@@ -107,7 +107,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       }
     } catch (popupErr) {
       console.error('Print popup fallback error:', popupErr);
-      handleDownload();
     }
   };
 
