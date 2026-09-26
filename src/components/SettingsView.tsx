@@ -2,6 +2,7 @@
  * Settings View Component
  */
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Settings as SettingsIcon,
   Store,
@@ -25,7 +26,9 @@ import {
   Moon,
   Sun,
   Printer,
-  ShoppingBag
+  ShoppingBag,
+  Check,
+  X
 } from 'lucide-react';
 import {
   Settings,
@@ -69,6 +72,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
   const [animatedBg, setAnimatedBg] = useState(settings.animatedBackground !== false);
   const [isDarkMode, setIsDarkMode] = useState(settings.darkMode ?? false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [receiptSavedAlert, setReceiptSavedAlert] = useState<{
+    show: boolean;
+    message: string;
+    details: string;
+  } | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Backup & Data Safety states
@@ -210,6 +218,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
       verifyPinAndExecute(doSave);
     } else {
       doSave();
+    }
+  };
+
+  const handleSaveReceiptCustomization = () => {
+    const doSaveReceipt = async () => {
+      const updated: Settings = {
+        ...settings,
+        storeName,
+        ownerName,
+        storeAddress,
+        storeContact,
+        storeTin,
+        receiptHeader,
+        receiptFooter,
+        receiptPaperSize,
+        receiptFontFamily,
+        showBarcodeOnReceipt,
+        showCashierOnReceipt,
+        showLogoOnReceipt,
+        showTaxOnReceipt,
+        showCustomerOnReceipt,
+        currency,
+        lowStockThreshold: Number(lowStockThreshold) || 10,
+        adminPin,
+        animatedBackground: animatedBg,
+        darkMode: isDarkMode,
+      };
+
+      try {
+        await saveSettings(updated);
+        setReceiptSavedAlert({
+          show: true,
+          message: 'Receipt Customization Saved Successfully!',
+          details: `Format: ${receiptPaperSize.toUpperCase()} | Font: ${receiptFontFamily === 'mono' ? 'Monospace' : 'Clean Sans'} | Header & Footer updated.`
+        });
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 4000);
+        setTimeout(() => setReceiptSavedAlert(null), 6000);
+        onRefresh();
+      } catch (err) {
+        console.error('Save receipt customization error:', err);
+        alert('Failed to save receipt settings.');
+      }
+    };
+
+    if (adminPin !== settings.adminPin) {
+      verifyPinAndExecute(doSaveReceipt);
+    } else {
+      doSaveReceipt();
     }
   };
 
@@ -601,6 +658,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
           </button>
         </div>
 
+        {receiptSavedAlert?.show && (
+          <div className="flex items-start gap-3 rounded-2xl bg-emerald-600 text-white p-4 shadow-lg border border-emerald-500 mb-4 transition-all duration-300">
+            <div className="p-2 bg-white/20 rounded-xl text-white">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div className="flex-1">
+              <div className="font-bold text-sm">{receiptSavedAlert.message}</div>
+              <div className="text-xs text-emerald-100 mt-0.5">{receiptSavedAlert.details}</div>
+            </div>
+            <button
+              onClick={() => setReceiptSavedAlert(null)}
+              className="p-1 rounded-lg text-white/80 hover:bg-white/20 transition cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left / Settings Controls */}
           <div className="lg:col-span-7 space-y-4">
@@ -762,7 +837,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
             <div className="pt-2">
               <button
                 type="button"
-                onClick={handleSaveSettings}
+                onClick={handleSaveReceiptCustomization}
                 className="w-full sm:w-auto rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition cursor-pointer"
               >
                 Save Receipt Customizations

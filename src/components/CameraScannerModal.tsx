@@ -4,6 +4,7 @@
  * scrollable scanned product list, and an always-visible sticky "Done Scanning" footer.
  */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Camera,
@@ -409,8 +410,8 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
   );
   const currencySymbol = settings?.currency || '₱';
 
-  return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/85 p-2 sm:p-4 md:p-6 pb-20 sm:pb-6 backdrop-blur-md animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-slate-950/85 p-2 sm:p-4 md:p-6 pb-20 sm:pb-6 backdrop-blur-md animate-in fade-in duration-200">
       {/* Modal Container: Elevated with bottom clearance so mobile nav bar never overlaps */}
       <div className="relative w-full max-w-xl flex flex-col h-full max-h-[calc(100dvh-5.5rem)] sm:max-h-[85vh] rounded-3xl bg-white shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 dark:bg-slate-900 transition-all mb-4 sm:mb-0">
         
@@ -770,6 +771,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

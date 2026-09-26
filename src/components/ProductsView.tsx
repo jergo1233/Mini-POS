@@ -35,7 +35,8 @@ import {
   ProductHistoryAction,
   addProductHistoryLog,
   getAllProductHistory,
-  clearProductHistory
+  clearProductHistory,
+  saveCategory
 } from '../db/indexedDB';
 import { BarcodeRenderer } from './BarcodeRenderer';
 import { BarcodeModal } from './BarcodeModal';
@@ -85,6 +86,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [cost, setCost] = useState<number>(0);
   const [stock, setStock] = useState<number>(0);
   const [categoryId, setCategoryId] = useState(categories[0]?.id || '');
+  const [customCategoryName, setCustomCategoryName] = useState('');
   const [description, setDescription] = useState('');
   const [imageBlob, setImageBlob] = useState<Blob | string | undefined>(undefined);
   const [imagePreview, setImagePreview] = useState<string>('');
@@ -130,6 +132,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setCost(0);
     setStock(10);
     setCategoryId(categories[0]?.id || '');
+    setCustomCategoryName('');
     setDescription('');
     setImageBlob(undefined);
     setImagePreview('');
@@ -145,6 +148,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setCost(product.cost || 0);
     setStock(product.stock);
     setCategoryId(product.categoryId);
+    setCustomCategoryName('');
     setDescription(product.description || '');
     setImageBlob(product.image);
     if (product.image) {
@@ -242,6 +246,27 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     const finalCost = Number(cost) || 0;
     const finalStock = Number(stock) || 0;
 
+    let finalCategoryId = categoryId;
+    if (categoryId === '__other__') {
+      const trimmedCustom = customCategoryName.trim();
+      if (!trimmedCustom) {
+        alert('Paki-lagay ang pangalan ng bagong category.');
+        return;
+      }
+      const existingCat = categories.find(c => c.name.toLowerCase() === trimmedCustom.toLowerCase());
+      if (existingCat) {
+        finalCategoryId = existingCat.id;
+      } else {
+        const newCatId = `cat-${Date.now()}`;
+        await saveCategory({
+          id: newCatId,
+          name: trimmedCustom,
+          description: 'Custom category added by user'
+        });
+        finalCategoryId = newCatId;
+      }
+    }
+
     const newProduct: Product = {
       id: editingProduct ? editingProduct.id : `prod-${Date.now()}`,
       sku: sku.trim() || `SKU-${Date.now().toString().slice(-4)}`,
@@ -250,7 +275,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       price: finalPrice,
       cost: finalCost,
       stock: finalStock,
-      categoryId,
+      categoryId: finalCategoryId,
       description: description.trim(),
       image: imageBlob,
       createdAt: editingProduct ? editingProduct.createdAt : now,
@@ -1192,17 +1217,36 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Category
+                  Category *
                 </label>
                 <select
                   value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
+                  onChange={(e) => {
+                    setCategoryId(e.target.value);
+                    if (e.target.value !== '__other__') {
+                      setCustomCategoryName('');
+                    }
+                  }}
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 >
                   {categories.map(cat => (
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
+                  <option value="__other__">+ Other (Type manually)...</option>
                 </select>
+
+                {categoryId === '__other__' && (
+                  <div className="mt-2">
+                    <input
+                      type="text"
+                      placeholder="Enter new category name..."
+                      value={customCategoryName}
+                      onChange={(e) => setCustomCategoryName(e.target.value)}
+                      required
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
