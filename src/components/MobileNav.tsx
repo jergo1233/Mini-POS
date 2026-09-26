@@ -15,7 +15,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentTab, onSelectTab, o
   const isMoreActive = ['inventory', 'sales', 'reports', 'customers', 'settings'].includes(currentTab);
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-around py-2 px-2 shadow-lg">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-around py-2 px-2 shadow-lg transition-colors">
       <button
         onClick={() => onSelectTab('dashboard')}
         className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${

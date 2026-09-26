@@ -93,6 +93,7 @@ export interface Settings {
   adminPin: string;
   darkMode: boolean;
   ownerName: string;
+  animatedBackground?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -106,6 +107,7 @@ export const DEFAULT_SETTINGS: Settings = {
   adminPin: '1234',
   darkMode: false,
   ownerName: 'Jerome Urbano',
+  animatedBackground: true,
 };
 
 export const DEFAULT_CATEGORIES: Category[] = [

@@ -40,10 +40,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, store
   ];
 
   return (
-    <aside className="hidden md:flex w-64 flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shrink-0">
+    <aside className="relative z-20 hidden md:flex w-64 flex-col bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-r border-slate-200/80 dark:border-slate-800/80 shrink-0 transition-colors">
       <div className="flex h-16 items-center gap-3 px-6 border-b border-slate-100 dark:border-slate-800">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20">
-          <Store className="w-5 h-5" />
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/20 overflow-hidden p-1.5 shrink-0">
+          <img src="/icon.svg" alt="App Logo" className="w-full h-full object-contain" />
         </div>
         <div className="overflow-hidden">
           <h1 className="font-bold text-slate-900 dark:text-white truncate text-sm">

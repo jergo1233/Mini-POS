@@ -20,7 +20,10 @@ import {
   Layers,
   Receipt,
   Users,
-  Clock
+  Clock,
+  Sparkles,
+  Moon,
+  Sun
 } from 'lucide-react';
 import {
   Settings,
@@ -52,6 +55,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
   const [currency, setCurrency] = useState(settings.currency);
   const [lowStockThreshold, setLowStockThreshold] = useState(settings.lowStockThreshold);
   const [adminPin, setAdminPin] = useState(settings.adminPin);
+  const [animatedBg, setAnimatedBg] = useState(settings.animatedBackground !== false);
+  const [isDarkMode, setIsDarkMode] = useState(settings.darkMode ?? false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
@@ -166,6 +171,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
         currency,
         lowStockThreshold: Number(lowStockThreshold) || 10,
         adminPin,
+        animatedBackground: animatedBg,
+        darkMode: isDarkMode,
       };
 
       try {
@@ -488,6 +495,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
             />
           </div>
 
+          {/* Appearance & Atmosphere Settings */}
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+              Visual Atmosphere & Display
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Animated Background Toggle */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-slate-900 dark:text-white">Animated Background</div>
+                    <div className="text-[11px] text-slate-500">Fluid ambient aurora & retail grid</div>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={animatedBg}
+                    onChange={(e) => setAnimatedBg(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              {/* Dark Mode Theme Toggle */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                    {isDarkMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-slate-900 dark:text-white">Dark Mode</div>
+                    <div className="text-[11px] text-slate-500">{isDarkMode ? 'Night Terminal Theme' : 'Clean Light Canvas'}</div>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isDarkMode}
+                    onChange={(e) => setIsDarkMode(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div className="pt-2">
             <button
               type="submit"
@@ -629,11 +688,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
             onClick={handleInstallApp}
             className="flex flex-col items-center justify-center p-5 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition text-center group cursor-pointer"
           >
-            <div className="rounded-xl bg-indigo-100/70 dark:bg-indigo-900/50 p-3.5 text-indigo-600 dark:text-indigo-400 mb-3 group-hover:scale-110 transition">
-              <Smartphone className="w-6 h-6" />
+            <div className="rounded-xl bg-indigo-100/70 dark:bg-indigo-900/50 p-2 text-indigo-600 dark:text-indigo-400 mb-3 group-hover:scale-110 transition h-12 w-12 flex items-center justify-center overflow-hidden">
+              <img src="/icon.svg" alt="App Logo" className="w-8 h-8 object-contain" />
             </div>
             <span className="font-semibold text-sm text-indigo-600 dark:text-indigo-400">Install App</span>
-            <span className="text-xs text-slate-500 mt-1">Install as standalone app</span>
+            <span className="text-xs text-slate-500 mt-1">Install to device home screen</span>
           </button>
 
           {/* Clear All Data */}

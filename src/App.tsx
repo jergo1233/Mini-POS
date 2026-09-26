@@ -28,6 +28,7 @@ import { SalesView } from './components/SalesView';
 import { ReportsView } from './components/ReportsView';
 import { CustomersView } from './components/CustomersView';
 import { SettingsView } from './components/SettingsView';
+import { AnimatedBackground } from './components/AnimatedBackground';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
@@ -87,7 +88,13 @@ export default function App() {
   }
 
   return (
-    <div className={`flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans ${settings.darkMode ? 'dark' : ''}`}>
+    <div className={`relative flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-500 ${settings.darkMode ? 'dark' : ''}`}>
+      {/* Animated Ambient POS Background */}
+      <AnimatedBackground
+        enabled={settings.animatedBackground !== false}
+        darkMode={settings.darkMode}
+      />
+
       {/* Desktop Sidebar */}
       <Sidebar
         currentTab={currentTab}
@@ -97,23 +104,31 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="relative z-10 flex-1 flex flex-col overflow-hidden">
         {/* Top Header Bar */}
-        <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 shrink-0">
+        <header className="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between px-4 md:px-6 shrink-0 transition-colors">
           <div className="flex items-center gap-3">
-            <span className="font-bold text-base text-slate-900 dark:text-white capitalize">
-              {currentTab === 'pos' ? 'POS Terminal' : currentTab.replace('-', ' ')}
-            </span>
+            <div className="md:hidden flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs overflow-hidden p-1 shrink-0">
+              <img src="/icon.svg" alt="App Logo" className="w-full h-full object-contain" />
+            </div>
+            <div>
+              <span className="font-bold text-base text-slate-900 dark:text-white capitalize">
+                {currentTab === 'pos' ? 'POS Terminal' : currentTab.replace('-', ' ')}
+              </span>
+              <div className="md:hidden text-[10px] text-slate-500 font-medium truncate max-w-[140px]">
+                {settings.storeName || 'Mini POS'}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold px-3 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50/80 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 backdrop-blur-xs border border-blue-200/50 dark:border-blue-900/50">
               Offline-First POS
             </span>
           </div>
         </header>
 
         {/* View Router */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 relative z-10">
           {currentTab === 'dashboard' && (
             <Dashboard
               products={products}
