@@ -86,6 +86,8 @@ export interface Settings {
   storeName: string;
   storeAddress: string;
   storeContact: string;
+  storeTin?: string;
+  receiptHeader?: string;
   receiptFooter: string;
   currency: string;
   taxRate: number;
@@ -94,13 +96,22 @@ export interface Settings {
   darkMode: boolean;
   ownerName: string;
   animatedBackground?: boolean;
+  receiptPaperSize?: '80mm' | '58mm' | 'full';
+  showBarcodeOnReceipt?: boolean;
+  showCashierOnReceipt?: boolean;
+  showLogoOnReceipt?: boolean;
+  showTaxOnReceipt?: boolean;
+  showCustomerOnReceipt?: boolean;
+  receiptFontFamily?: 'mono' | 'sans';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   storeName: 'Mini Universal POS Store',
   storeAddress: '123 Business Rd, Metro Manila, Philippines',
   storeContact: '+63 912 345 6789',
-  receiptFooter: 'Thank you for your purchase! Please come again.',
+  storeTin: '123-456-789-000',
+  receiptHeader: 'Official Sales Receipt • Thank you for shopping with us!',
+  receiptFooter: 'Thank you for your purchase! Goods sold are exchangeable within 7 days.',
   currency: '₱',
   taxRate: 0,
   lowStockThreshold: 10,
@@ -108,6 +119,13 @@ export const DEFAULT_SETTINGS: Settings = {
   darkMode: false,
   ownerName: 'Jerome Urbano',
   animatedBackground: true,
+  receiptPaperSize: '80mm',
+  showBarcodeOnReceipt: true,
+  showCashierOnReceipt: true,
+  showLogoOnReceipt: true,
+  showTaxOnReceipt: true,
+  showCustomerOnReceipt: true,
+  receiptFontFamily: 'mono',
 };
 
 export const DEFAULT_CATEGORIES: Category[] = [

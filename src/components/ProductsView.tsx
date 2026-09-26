@@ -1268,7 +1268,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       {/* Barcode Print Modal */}
       {showBarcodeModal && (
         <BarcodeModal
-          products={filteredProducts.length > 0 ? filteredProducts : products}
+          products={products}
+          categories={categories}
           settings={settings}
           onClose={() => setShowBarcodeModal(false)}
         />

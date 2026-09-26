@@ -118,25 +118,88 @@
   background-image: radial-gradient(circle, rgba(96, 165, 250, 0.05) 1.2px, transparent 1.2px);
 }
 
+/* --- Camera Barcode Scanner Animations --- */
+@keyframes laser-sweep {
+  0% {
+    top: 5%;
+    opacity: 0.9;
+  }
+  50% {
+    top: 90%;
+    opacity: 1;
+  }
+  100% {
+    top: 5%;
+    opacity: 0.9;
+  }
+}
+
+.animate-laser-sweep {
+  animation: laser-sweep 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 @media print {
+  @page {
+    margin: 6mm;
+    size: auto;
+  }
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
   body * {
     visibility: hidden;
   }
-  .printable-area, .printable-area *, .printable-receipt, .printable-receipt * {
+  .printable-receipt, .printable-receipt *, .printable-barcode-sheet, .printable-barcode-sheet * {
     visibility: visible;
-  }
-  .printable-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
   }
   .printable-receipt {
     position: absolute;
-    left: 50%;
+    left: 0;
     top: 0;
-    transform: translateX(-50%);
-    width: 80mm;
+    width: 100% !important;
+    max-width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 10px !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    color: black !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+  .printable-receipt.receipt-58mm {
+    max-width: 58mm !important;
+    font-size: 9.5px !important;
+  }
+  .printable-receipt.receipt-full {
+    max-width: 100% !important;
+    font-size: 13px !important;
+  }
+  .printable-barcode-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: grid !important;
+    gap: 8px !important;
+  }
+  .printable-barcode-item {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    border: 1px dashed #999 !important;
+    padding: 8px !important;
+    background: #fff !important;
+    text-align: center !important;
+  }
+  .no-print {
+    display: none !important;
   }
   .page-break-inside-avoid {
     break-inside: avoid;

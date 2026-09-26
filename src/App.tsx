@@ -104,7 +104,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="relative z-10 flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header Bar */}
         <header className="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between px-4 md:px-6 shrink-0 transition-colors">
           <div className="flex items-center gap-3">

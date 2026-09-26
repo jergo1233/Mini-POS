@@ -23,7 +23,9 @@ import {
   Clock,
   Sparkles,
   Moon,
-  Sun
+  Sun,
+  Printer,
+  ShoppingBag
 } from 'lucide-react';
 import {
   Settings,
@@ -51,7 +53,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
   const [ownerName, setOwnerName] = useState(settings.ownerName || 'Jerome Urbano');
   const [storeAddress, setStoreAddress] = useState(settings.storeAddress);
   const [storeContact, setStoreContact] = useState(settings.storeContact);
+  const [storeTin, setStoreTin] = useState(settings.storeTin || '');
+  const [receiptHeader, setReceiptHeader] = useState(settings.receiptHeader || 'Official Sales Receipt • Thank you for shopping with us!');
   const [receiptFooter, setReceiptFooter] = useState(settings.receiptFooter);
+  const [receiptPaperSize, setReceiptPaperSize] = useState<'80mm' | '58mm' | 'full'>(settings.receiptPaperSize || '80mm');
+  const [receiptFontFamily, setReceiptFontFamily] = useState<'mono' | 'sans'>(settings.receiptFontFamily || 'mono');
+  const [showBarcodeOnReceipt, setShowBarcodeOnReceipt] = useState(settings.showBarcodeOnReceipt !== false);
+  const [showCashierOnReceipt, setShowCashierOnReceipt] = useState(settings.showCashierOnReceipt !== false);
+  const [showLogoOnReceipt, setShowLogoOnReceipt] = useState(settings.showLogoOnReceipt !== false);
+  const [showTaxOnReceipt, setShowTaxOnReceipt] = useState(settings.showTaxOnReceipt !== false);
+  const [showCustomerOnReceipt, setShowCustomerOnReceipt] = useState(settings.showCustomerOnReceipt !== false);
   const [currency, setCurrency] = useState(settings.currency);
   const [lowStockThreshold, setLowStockThreshold] = useState(settings.lowStockThreshold);
   const [adminPin, setAdminPin] = useState(settings.adminPin);
@@ -167,7 +178,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
         ownerName,
         storeAddress,
         storeContact,
+        storeTin,
+        receiptHeader,
         receiptFooter,
+        receiptPaperSize,
+        receiptFontFamily,
+        showBarcodeOnReceipt,
+        showCashierOnReceipt,
+        showLogoOnReceipt,
+        showTaxOnReceipt,
+        showCustomerOnReceipt,
         currency,
         lowStockThreshold: Number(lowStockThreshold) || 10,
         adminPin,
@@ -428,6 +448,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Tax ID / BIR TIN (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 123-456-789-000"
+                value={storeTin}
+                onChange={(e) => setStoreTin(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
           </div>
 
           <div>
@@ -481,18 +513,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white font-mono"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-              Receipt Footer Note
-            </label>
-            <input
-              type="text"
-              value={receiptFooter}
-              onChange={(e) => setReceiptFooter(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            />
           </div>
 
           {/* Appearance & Atmosphere Settings */}
@@ -550,12 +570,319 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
           <div className="pt-2">
             <button
               type="submit"
-              className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition"
+              className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition cursor-pointer"
             >
-              Save Settings
+              Save Store Settings
             </button>
           </div>
         </form>
+      </div>
+
+      {/* 2. Receipt Design & Customization (Customizing Receipt) */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-2">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl text-indigo-600">
+              <Receipt className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">Receipt Design & Customization</h3>
+              <p className="text-xs text-slate-500">I-customize ang hitsura, headers, footers, at layout ng iyong resibo na may live preview</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-bold shadow-xs hover:opacity-90 transition cursor-pointer self-start sm:self-auto"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            <span>Test Print Receipt</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left / Settings Controls */}
+          <div className="lg:col-span-7 space-y-4">
+            {/* Paper Size & Font Style */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Default Paper Size
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setReceiptPaperSize('80mm')}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition text-center ${
+                      receiptPaperSize === '80mm'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    80mm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptPaperSize('58mm')}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition text-center ${
+                      receiptPaperSize === '58mm'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    58mm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptPaperSize('full')}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition text-center ${
+                      receiptPaperSize === 'full'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    A4 Full
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Receipt Font Style
+                </label>
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setReceiptFontFamily('mono')}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-mono font-bold transition text-center ${
+                      receiptFontFamily === 'mono'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Monospace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptFontFamily('sans')}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-sans font-bold transition text-center ${
+                      receiptFontFamily === 'sans'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Clean Sans
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Receipt Header Tagline / Greeting */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Receipt Header Greeting / Tagline
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Official Sales Receipt • Thank you for shopping!"
+                value={receiptHeader}
+                onChange={(e) => setReceiptHeader(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+
+            {/* Receipt Footer Message / Return Policy */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Receipt Footer Message & Return Policy
+              </label>
+              <textarea
+                rows={2}
+                placeholder="e.g. Thank you for your purchase! Goods sold are exchangeable within 7 days with this receipt."
+                value={receiptFooter}
+                onChange={(e) => setReceiptFooter(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+
+            {/* Element Display Toggles */}
+            <div className="pt-2 space-y-2.5">
+              <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider block">
+                Show / Hide Elements on Receipt
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Logo toggle */}
+                <label className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 cursor-pointer">
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Show Store Logo/Icon</span>
+                  <input
+                    type="checkbox"
+                    checked={showLogoOnReceipt}
+                    onChange={(e) => setShowLogoOnReceipt(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                  />
+                </label>
+
+                {/* Cashier toggle */}
+                <label className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 cursor-pointer">
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Show Cashier Name</span>
+                  <input
+                    type="checkbox"
+                    checked={showCashierOnReceipt}
+                    onChange={(e) => setShowCashierOnReceipt(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                  />
+                </label>
+
+                {/* Tax summary toggle */}
+                <label className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 cursor-pointer">
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Show Tax / VAT Row</span>
+                  <input
+                    type="checkbox"
+                    checked={showTaxOnReceipt}
+                    onChange={(e) => setShowTaxOnReceipt(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                  />
+                </label>
+
+                {/* Customer toggle */}
+                <label className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 cursor-pointer">
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Show Customer Name</span>
+                  <input
+                    type="checkbox"
+                    checked={showCustomerOnReceipt}
+                    onChange={(e) => setShowCustomerOnReceipt(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                className="w-full sm:w-auto rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition cursor-pointer"
+              >
+                Save Receipt Customizations
+              </button>
+            </div>
+          </div>
+
+          {/* Right / Interactive Live Receipt Preview */}
+          <div className="lg:col-span-5 bg-slate-100 dark:bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col items-center">
+            <div className="w-full flex items-center justify-between pb-2 mb-3 border-b border-slate-200 dark:border-slate-800">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                Live Real-Time Preview
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {receiptPaperSize} • {receiptFontFamily}
+              </span>
+            </div>
+
+            {/* Live Rendered Thermal Slip */}
+            <div
+              className={`w-full bg-white text-slate-900 rounded-2xl shadow-md border border-slate-200/90 p-4 ${
+                receiptFontFamily === 'mono' ? 'font-mono' : 'font-sans'
+              } text-[11px] printable-receipt space-y-2.5 max-w-[340px] relative`}
+            >
+              {/* Top Serrated Edge */}
+              <div className="no-print absolute -top-1 left-2 right-2 h-1 flex justify-between overflow-hidden opacity-30">
+                {Array.from({ length: 24 }).map((_, i) => (
+                  <div key={i} className="w-1.5 h-1.5 bg-slate-300 rotate-45 shrink-0 -mt-0.5" />
+                ))}
+              </div>
+
+              {/* Header */}
+              <div className="text-center space-y-0.5 pb-2 border-b-2 border-dashed border-slate-300">
+                <div className="flex items-center justify-center gap-1 font-sans font-black text-sm text-slate-950">
+                  {showLogoOnReceipt && <ShoppingBag className="w-4 h-4 text-blue-600" />}
+                  <span>{storeName || 'MINI POS SYSTEM'}</span>
+                </div>
+                {storeAddress && <div className="text-slate-600 text-[10px] leading-tight">{storeAddress}</div>}
+                {storeContact && <div className="text-slate-600 text-[10px]">Tel: {storeContact}</div>}
+                {storeTin && <div className="text-slate-600 text-[10px]">TIN: {storeTin}</div>}
+                {receiptHeader && <div className="text-[10px] italic text-slate-500 mt-0.5">{receiptHeader}</div>}
+              </div>
+
+              {/* Meta */}
+              <div className="space-y-0.5 text-[10px] text-slate-700">
+                <div className="flex justify-between">
+                  <span>Receipt #:</span>
+                  <span className="font-bold">RCP-DEMO-2026</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Date:</span>
+                  <span>{new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                {showCashierOnReceipt && (
+                  <div className="flex justify-between">
+                    <span>Cashier:</span>
+                    <span>{ownerName || 'Admin'}</span>
+                  </div>
+                )}
+                {showCustomerOnReceipt && (
+                  <div className="flex justify-between">
+                    <span>Customer:</span>
+                    <span className="font-bold">Walk-in Customer</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Sample Items */}
+              <div className="border-t-2 border-dashed border-slate-300 pt-1.5">
+                <div className="grid grid-cols-12 font-bold text-[10px] pb-1 border-b border-slate-200">
+                  <span className="col-span-6">Item</span>
+                  <span className="col-span-2 text-center">Qty</span>
+                  <span className="col-span-4 text-right">Amount</span>
+                </div>
+                <div className="py-1 space-y-1">
+                  <div className="flex justify-between">
+                    <span className="truncate">Sample Retail Item A</span>
+                    <span className="font-bold">{currency}120.00</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="truncate">Sample Retail Item B (2x)</span>
+                    <span className="font-bold">{currency}90.00</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Totals */}
+              <div className="border-t-2 border-dashed border-slate-300 pt-1.5 space-y-1 text-[11px]">
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal:</span>
+                  <span>{currency}210.00</span>
+                </div>
+                {showTaxOnReceipt && (
+                  <div className="flex justify-between text-slate-600 text-[10px]">
+                    <span>VAT / Tax (12%):</span>
+                    <span>{currency}22.50</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-black text-xs text-slate-950 pt-1 border-t border-slate-900">
+                  <span>TOTAL:</span>
+                  <span>{currency}210.00</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Cash Tendered:</span>
+                  <span>{currency}500.00</span>
+                </div>
+                <div className="flex justify-between font-bold text-emerald-700">
+                  <span>Change:</span>
+                  <span>{currency}290.00</span>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-dashed border-slate-200 pt-1.5 text-center text-[9.5px] text-slate-500 leading-tight">
+                {receiptFooter || 'Thank you for your purchase!'}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Data Safety, Backup & Restore Section */}
