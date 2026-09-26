@@ -58,12 +58,55 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     minute: '2-digit',
   });
 
-  // Handle direct window print with fallback
+  // Handle direct window print with robust fallback
   const handlePrint = () => {
     try {
       window.print();
     } catch (e) {
-      console.error('Print error:', e);
+      console.warn('Standard window.print failed:', e);
+    }
+
+    // Fallback: Open clean print window if iframe blocking prevents direct window.print()
+    try {
+      const receiptElement = document.getElementById('printable-receipt-slip');
+      if (receiptElement) {
+        const printWindow = window.open('', '_blank', 'width=450,height=650');
+        if (printWindow) {
+          printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Receipt Slip - ${transaction.receiptNo}</title>
+                <style>
+                  body { font-family: 'Courier New', Courier, monospace; padding: 15px; font-size: 12px; color: #000; background: #fff; margin: 0; }
+                  .text-center { text-align: center; }
+                  .font-bold { font-weight: bold; }
+                  .flex { display: flex; }
+                  .justify-between { justify-content: space-between; }
+                  .border-b-2 { border-bottom: 2px dashed #000; }
+                  .border-b { border-bottom: 1px dashed #ccc; }
+                  .pb-2 { padding-bottom: 8px; }
+                  .mb-2 { margin-bottom: 8px; }
+                  .no-print { display: none !important; }
+                </style>
+              </head>
+              <body>
+                ${receiptElement.innerHTML}
+                <script>
+                  window.onload = function() {
+                    setTimeout(function() {
+                      window.print();
+                    }, 400);
+                  };
+                </script>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+        }
+      }
+    } catch (popupErr) {
+      console.error('Print popup fallback error:', popupErr);
       handleDownload();
     }
   };
