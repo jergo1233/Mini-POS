@@ -43,11 +43,6 @@ import {
   getAllCustomers,
   clearAllData,
   DEFAULT_SETTINGS,
-  exportAllDataAsJSON,
-  importDataFromJSON,
-  validateBackupData,
-  POSBackupData,
-  ImportSummary,
 } from '../db/indexedDB';
 import {
   createAdminAuthCredentials,
@@ -56,6 +51,15 @@ import {
   hashSecretWithSalt,
   generateRecoveryCodeDocument,
 } from '../utils/cryptoAuth';
+import {
+  exportFullBusinessBackupZip,
+  exportProductsOnlyTransferZip,
+  inspectZipFile,
+  executeFullRestore,
+  executeProductsOnlyImport,
+  executeSalesTransferImport,
+  ZipInspection,
+} from '../utils/zipTransfer';
 
 interface SettingsViewProps {
   settings: Settings;
@@ -200,7 +204,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
-  // Backup & Data Safety states
+  // ZIP Backup & Transfer states
   const [dbStats, setDbStats] = useState({
     products: 0,
     categories: 0,
@@ -212,15 +216,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [exporting, setExporting] = useState(false);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
 
-  // Import Modal & States
+  // ZIP Import Modal & States
   const [showImportModal, setShowImportModal] = useState(false);
-  const [pendingBackup, setPendingBackup] = useState<POSBackupData | null>(null);
+  const [pendingZipInspection, setPendingZipInspection] = useState<ZipInspection | null>(null);
   const [importFileName, setImportFileName] = useState('');
-  const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
   const [importPin, setImportPin] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importSummaryResult, setImportSummaryResult] = useState<ImportSummary | null>(null);
 
   // Clear Data Warning Modal states
   const [showClearWarningModal, setShowClearWarningModal] = useState(false);
@@ -481,59 +483,69 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  // 1. Export JSON Data
-  const handleExportJSON = async () => {
+  // 1. Export ZIP Data
+  const handleExportFullZip = async () => {
     try {
       setExporting(true);
-      const backup = await exportAllDataAsJSON();
+      await exportFullBusinessBackupZip();
       const now = new Date().toISOString();
       setLastBackupDate(now);
-      setExportSuccessMessage(
-        `Export successful! Saved ${backup.metadata?.productCount ?? 0} products, ${backup.metadata?.categoryCount ?? 0} categories, and ${backup.metadata?.transactionCount ?? 0} transactions to JSON.`
-      );
+      localStorage.setItem('pos_last_backup_date', now);
+      setExportSuccessMessage('Full Business Backup (.zip) generated successfully!');
       setTimeout(() => setExportSuccessMessage(null), 6000);
     } catch (err) {
-      console.error('Export JSON error:', err);
+      console.error('Export ZIP error:', err);
       alert('Failed to export backup. Please ensure your browser permits downloads.');
     } finally {
       setExporting(false);
     }
   };
 
-  // 2. Select file to Import JSON
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImportFileName(file.name);
-    setImportError(null);
-    setImportSummaryResult(null);
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target?.result as string);
-        const validation = validateBackupData(parsed);
-        if (!validation.valid || !validation.backup) {
-          alert(validation.error || 'Invalid backup file structure.');
-          return;
-        }
-
-        setPendingBackup(validation.backup);
-        setImportMode('merge');
-        setImportPin('');
-        setShowImportModal(true);
-      } catch (err) {
-        console.error('JSON parse error:', err);
-        alert('Invalid JSON file format. Please upload a valid .json POS backup file.');
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = ''; // reset file input
+  const handleExportProductsOnly = async () => {
+    try {
+      setExporting(true);
+      await exportProductsOnlyTransferZip();
+      setExportSuccessMessage('Products-Only Transfer (.zip) generated successfully!');
+      setTimeout(() => setExportSuccessMessage(null), 6000);
+    } catch (err) {
+      console.error('Export Products ZIP error:', err);
+      alert('Failed to export products. Please check if you have products registered.');
+    } finally {
+      setExporting(false);
+    }
   };
 
-  // 3. Confirm and Execute Import
+  // 2. Select file to Inspect & Import ZIP
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setImportFileName(file.name);
+    setImportError(null);
+    setImporting(true);
+
+    try {
+      const inspection = await inspectZipFile(file);
+      if (!inspection.valid) {
+        alert(inspection.error || 'Invalid ZIP file structure.');
+        return;
+      }
+
+      setPendingZipInspection(inspection);
+      setImportPin('');
+      setShowImportModal(true);
+    } catch (err) {
+      console.error('ZIP inspection error:', err);
+      alert('Failed to read ZIP file. Make sure it is a valid POS backup.');
+    } finally {
+      setImporting(false);
+      e.target.value = ''; // reset file input
+    }
+  };
+
+  // 3. Confirm and Execute ZIP Import
   const handleConfirmImport = async () => {
-    if (!pendingBackup) return;
+    if (!pendingZipInspection) return;
 
     const isMatch = await verifyAdminPin(importPin, settings);
     if (!isMatch) {
@@ -545,24 +557,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setImporting(true);
       setImportError(null);
 
-      const summary = await importDataFromJSON(pendingBackup, importMode);
-      setImportSummaryResult(summary);
-      await loadStats();
-      onRefresh();
+      let result;
+      if (pendingZipInspection.exportType === 'full_backup' || pendingZipInspection.exportType === 'legacy_json') {
+        result = await executeFullRestore(pendingZipInspection);
+      } else if (pendingZipInspection.exportType === 'products_transfer') {
+        result = await executeProductsOnlyImport(pendingZipInspection);
+      } else if (pendingZipInspection.exportType === 'sales_transfer') {
+        result = await executeSalesTransferImport(pendingZipInspection);
+      } else {
+        throw new Error('Unsupported export type.');
+      }
 
-      setTimeout(() => {
-        alert(
-          `Data successfully restored!\n\n` +
-          `• Products Restored: ${summary.productsCount}\n` +
-          `• Categories Restored: ${summary.categoriesCount}\n` +
-          `• Sales Records Restored: ${summary.transactionsCount}\n` +
-          `• Customers Restored: ${summary.customersCount}`
-        );
-        setShowImportModal(false);
-        window.location.reload();
-      }, 1000);
+      if (result.success) {
+        await loadStats();
+        onRefresh();
+
+        setTimeout(() => {
+          alert(result.message);
+          setShowImportModal(false);
+          window.location.reload();
+        }, 800);
+      }
     } catch (err) {
-      console.error('Import error:', err);
+      console.error('Import execution error:', err);
       setImportError('Failed to import database: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setImporting(false);
@@ -1358,9 +1375,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Action Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Export JSON */}
+          {/* Export Full ZIP */}
           <button
-            onClick={handleExportJSON}
+            onClick={handleExportFullZip}
             disabled={exporting}
             className="flex flex-col items-center justify-center p-5 rounded-2xl border border-blue-200 dark:border-blue-900/50 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition text-center group cursor-pointer"
           >
@@ -1368,37 +1385,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Download className="w-6 h-6" />
             </div>
             <span className="font-semibold text-sm text-slate-900 dark:text-white">
-              {exporting ? 'Exporting...' : 'Export JSON Backup'}
+              {exporting ? 'Exporting...' : 'Export Full ZIP Backup'}
             </span>
-            <span className="text-xs text-slate-500 mt-1">Download complete database as .json file</span>
+            <span className="text-xs text-slate-500 mt-1">Full database + images in one ZIP</span>
           </button>
 
-          {/* Restore JSON */}
+          {/* Export Products Only */}
+          <button
+            onClick={handleExportProductsOnly}
+            disabled={exporting}
+            className="flex flex-col items-center justify-center p-5 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition text-center group cursor-pointer"
+          >
+            <div className="rounded-xl bg-indigo-100/70 dark:bg-indigo-900/50 p-3.5 text-indigo-600 dark:text-indigo-400 mb-3 group-hover:scale-110 transition shadow-2xs">
+              <Package className="w-6 h-6" />
+            </div>
+            <span className="font-semibold text-sm text-slate-900 dark:text-white">
+              {exporting ? 'Exporting...' : 'Products Transfer'}
+            </span>
+            <span className="text-xs text-slate-500 mt-1">Export only products for other devices</span>
+          </button>
+
+          {/* Restore ZIP/JSON */}
           <label className="flex flex-col items-center justify-center p-5 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition text-center cursor-pointer group shadow-2xs">
             <div className="rounded-xl bg-emerald-100/70 dark:bg-emerald-900/50 p-3.5 text-emerald-600 dark:text-emerald-400 mb-3 group-hover:scale-110 transition">
               <Upload className="w-6 h-6" />
             </div>
-            <span className="font-semibold text-sm text-slate-900 dark:text-white">Restore JSON Backup</span>
-            <span className="text-xs text-slate-500 mt-1">Import & verify database file</span>
+            <span className="font-semibold text-sm text-slate-900 dark:text-white">Restore Backup</span>
+            <span className="text-xs text-slate-500 mt-1">Restore from ZIP or JSON file</span>
             <input
               type="file"
-              accept=".json"
+              accept=".zip,.json"
               onChange={handleFileSelect}
               className="hidden"
             />
           </label>
-
-          {/* Install PWA */}
-          <button
-            onClick={handleInstallApp}
-            className="flex flex-col items-center justify-center p-5 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition text-center group cursor-pointer"
-          >
-            <div className="rounded-xl bg-indigo-100/70 dark:bg-indigo-900/50 p-2 text-indigo-600 dark:text-indigo-400 mb-3 group-hover:scale-110 transition h-12 w-12 flex items-center justify-center overflow-hidden">
-              <img src="/icon.svg" alt="App Logo" className="w-8 h-8 object-contain" />
-            </div>
-            <span className="font-semibold text-sm text-indigo-600 dark:text-indigo-400">Install App</span>
-            <span className="text-xs text-slate-500 mt-1">Install to device home screen</span>
-          </button>
 
           {/* Clear All Data */}
           <button
@@ -1411,11 +1431,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span className="font-semibold text-sm text-red-600">Clear All Data</span>
             <span className="text-xs text-slate-500 mt-1">Reset POS database</span>
           </button>
+
+          {/* Install PWA */}
+          <button
+            onClick={handleInstallApp}
+            className="flex flex-col items-center justify-center p-5 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition text-center group cursor-pointer"
+          >
+            <div className="rounded-xl bg-indigo-100/70 dark:bg-indigo-900/50 p-2 text-indigo-600 dark:text-indigo-400 mb-3 group-hover:scale-110 transition h-12 w-12 flex items-center justify-center overflow-hidden shadow-2xs">
+              <img src="/icon.svg" alt="App Logo" className="w-8 h-8 object-contain" />
+            </div>
+            <span className="font-semibold text-sm text-indigo-600 dark:text-indigo-400">Install App</span>
+            <span className="text-xs text-slate-500 mt-1">Install to device home screen</span>
+          </button>
         </div>
       </div>
 
       {/* Modal: Import Preview and Restore Confirmation */}
-      {showImportModal && pendingBackup && (
+      {showImportModal && pendingZipInspection && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
@@ -1439,84 +1471,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="text-slate-500">Store Name:</div>
                   <div className="font-semibold text-slate-900 dark:text-white truncate">
-                    {pendingBackup.settings?.storeName || pendingBackup.metadata?.storeName || 'Mini POS'}
+                    {pendingZipInspection.storeName || 'Mini POS'}
                   </div>
 
                   <div className="text-slate-500">Backup Date:</div>
                   <div className="font-semibold text-slate-900 dark:text-white">
-                    {pendingBackup.exportedAt ? new Date(pendingBackup.exportedAt).toLocaleDateString() : 'Unknown'}
+                    {pendingZipInspection.exportedAt ? new Date(pendingZipInspection.exportedAt).toLocaleDateString() : 'Unknown'}
+                  </div>
+
+                  <div className="text-slate-500">Import Type:</div>
+                  <div className="font-bold text-indigo-600 dark:text-indigo-400 uppercase">
+                    {pendingZipInspection.exportType.replace('_', ' ')}
                   </div>
 
                   <div className="text-slate-500">Products:</div>
                   <div className="font-semibold text-blue-600 dark:text-blue-400">
-                    {pendingBackup.products?.length || 0} items
+                    {pendingZipInspection.counts.productsToAdd + pendingZipInspection.counts.productsToUpdate} items
                   </div>
 
                   <div className="text-slate-500">Categories:</div>
                   <div className="font-semibold text-slate-900 dark:text-white">
-                    {pendingBackup.categories?.length || 0} categories
+                    {pendingZipInspection.counts.categoriesToAdd} categories
                   </div>
 
-                  <div className="text-slate-500">Sales Transactions:</div>
-                  <div className="font-semibold text-emerald-600 dark:text-emerald-400">
-                    {pendingBackup.transactions?.length || 0} records
-                  </div>
+                  {pendingZipInspection.exportType !== 'products_transfer' && (
+                    <>
+                      <div className="text-slate-500">Sales Transactions:</div>
+                      <div className="font-semibold text-emerald-600 dark:text-emerald-400">
+                        {pendingZipInspection.counts.transactionsToAdd} records
+                      </div>
+                    </>
+                  )}
 
-                  <div className="text-slate-500">Customers:</div>
+                  <div className="text-slate-500">Images:</div>
                   <div className="font-semibold text-slate-900 dark:text-white">
-                    {pendingBackup.customers?.length || 0} records
+                    {pendingZipInspection.counts.imagesCount} photos
                   </div>
                 </div>
               </div>
 
-              {/* Restore Mode Selection */}
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Select Import Mode:
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <label className={`flex flex-col p-3 rounded-xl border text-xs cursor-pointer transition ${
-                    importMode === 'replace'
-                      ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30'
-                      : 'border-slate-200 dark:border-slate-700'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        value="replace"
-                        checked={importMode === 'replace'}
-                        onChange={() => setImportMode('replace')}
-                        className="text-blue-600"
-                      />
-                      <span className="font-bold text-slate-900 dark:text-white">Replace All (Full Restore)</span>
-                    </div>
-                    <span className="text-[11px] text-slate-500 mt-1 pl-5">
-                      Clears current data first and replaces it with this backup. Recommended for clean restore.
-                    </span>
-                  </label>
-
-                  <label className={`flex flex-col p-3 rounded-xl border text-xs cursor-pointer transition ${
-                    importMode === 'merge'
-                      ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30'
-                      : 'border-slate-200 dark:border-slate-700'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        value="merge"
-                        checked={importMode === 'merge'}
-                        onChange={() => setImportMode('merge')}
-                        className="text-blue-600"
-                      />
-                      <span className="font-bold text-slate-900 dark:text-white">Merge / Append</span>
-                    </div>
-                    <span className="text-[11px] text-slate-500 mt-1 pl-5">
-                      Keeps existing records and adds or updates items from the backup file.
-                    </span>
-                  </label>
-                </div>
+              {/* Import Rules Notice */}
+              <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 text-[11px] text-blue-800 dark:text-blue-300 space-y-1">
+                <p className="font-bold uppercase tracking-wider">Import Rules:</p>
+                {pendingZipInspection.exportType === 'products_transfer' ? (
+                  <p>• Updates product prices & info but <strong>PROTECTS</strong> your local stock inventory levels.</p>
+                ) : pendingZipInspection.exportType === 'sales_transfer' ? (
+                  <p>• Merges sales records without duplicating existing transactions.</p>
+                ) : (
+                  <p>• <strong>FULL RESTORE:</strong> Replaces entire business dataset. Local Admin PIN credentials will be strictly preserved.</p>
+                )}
               </div>
 
               {/* Security PIN Authorization */}
@@ -1621,12 +1624,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div>
                 <button
                   type="button"
-                  onClick={handleExportJSON}
+                  onClick={handleExportFullZip}
                   disabled={exporting}
                   className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-md shadow-blue-500/20 transition cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  {exporting ? 'Downloading Backup...' : 'Download JSON Backup First (Recommended)'}
+                  {exporting ? 'Downloading Backup...' : 'Download ZIP Backup First (Recommended)'}
                 </button>
               </div>
 
