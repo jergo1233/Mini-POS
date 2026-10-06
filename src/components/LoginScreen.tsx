@@ -8,16 +8,21 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
-  HelpCircle,
   CheckCircle2,
   AlertCircle,
   ArrowRight,
   Sparkles,
   PhoneCall,
-  QrCode,
   Download,
   Printer,
-  Cloud,
+  Copy,
+  Check,
+  FileText,
+  AlertTriangle,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  X,
 } from 'lucide-react';
 import {
   Cashier,
@@ -29,8 +34,12 @@ import {
   openDB,
 } from '../db/indexedDB';
 import { safeFetchJson } from '../utils/apiHelper';
-import { QRScannerModal } from './QRScannerModal';
-import { QRCodeCanvas } from 'qrcode.react';
+import {
+  createAdminAuthCredentials,
+  verifyAdminPin,
+  verifyRecoveryCode,
+  generateRecoveryCodeDocument,
+} from '../utils/cryptoAuth';
 
 export interface AuthSession {
   role: 'admin' | 'cashier';
@@ -57,134 +66,55 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [cashiers, setCashiers] = useState<Cashier[]>([]);
   const [selectedCashierId, setSelectedCashierId] = useState<string>('');
   const [enteredPin, setEnteredPin] = useState<string>('');
+  const [showPin, setShowPin] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Reset Request Modal States
-  const [showResetModal, setShowResetModal] = useState(false);
+  // Cashier Forgot PIN Request Modal
+  const [showCashierResetModal, setShowCashierResetModal] = useState(false);
   const [resetCashierId, setResetCashierId] = useState('');
   const [resetReason, setResetReason] = useState('');
   const [resetSuccessNotice, setResetSuccessNotice] = useState<string | null>(null);
 
-  // Admin PIN Recovery States
-  const [showQRScanner, setShowQRScanner] = useState(false);
-  const [showResetAdminModal, setShowResetAdminModal] = useState(false);
-  const [newAdminPin, setNewAdminPin] = useState('');
-  const [confirmAdminPin, setConfirmAdminPin] = useState('');
+  // Admin Forgot PIN & Offline Recovery Modal States
+  const [showForgotAdminModal, setShowForgotAdminModal] = useState(false);
+  const [recoveryStep, setRecoveryStep] = useState<'enterCode' | 'newPin' | 'saveReplacement'>('enterCode');
+  const [recoveryEnteredCode, setRecoveryEnteredCode] = useState('');
+  const [recoveryNewPin, setRecoveryNewPin] = useState('');
+  const [recoveryConfirmPin, setRecoveryConfirmPin] = useState('');
+  const [replacementCode, setReplacementCode] = useState('');
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
+  const [recoveryConfirmedSaved, setRecoveryConfirmedSaved] = useState(false);
+  const [recoveryFailedAttempts, setRecoveryFailedAttempts] = useState(0);
+  const [lockoutRemainingSecs, setLockoutRemainingSecs] = useState(0);
 
   // First-time Setup states
   const [setupPin, setSetupPin] = useState('');
   const [setupConfirmPin, setSetupConfirmPin] = useState('');
   const [setupStoreName, setSetupStoreName] = useState(settings.storeName || 'Mini Universal POS Store');
-  const [setupOwnerName, setSetupOwnerName] = useState(settings.ownerName || 'Jerome Urbano');
-  const [generatedToken, setGeneratedToken] = useState('');
-  const [setupStep, setSetupStep] = useState<'form' | 'qr'>('form');
-  const [isConnectingCloud, setIsConnectingCloud] = useState(false);
+  const [setupOwnerName, setSetupOwnerName] = useState(settings.ownerName || 'Store Owner');
+  const [generatedRecoveryCode, setGeneratedRecoveryCode] = useState('');
+  const [setupStep, setSetupStep] = useState<'form' | 'recoveryCode'>('form');
+  const [setupCopied, setSetupCopied] = useState(false);
+  const [setupConfirmedSaved, setSetupConfirmedSaved] = useState(false);
   const [forceShowLogin, setForceShowLogin] = useState(false);
 
-  const hydrateFromCloud = async (storeData: any) => {
-    if (!storeData) return;
-    try {
-      const db = await openDB();
-
-      // 1. Settings
-      if (storeData.settings) {
-        let remoteSettings = storeData.settings || {};
-        if (!remoteSettings.adminPin) {
-          remoteSettings.adminPin = '1234'; // Safe fallback
+  // Lockout countdown timer
+  useEffect(() => {
+    if (lockoutRemainingSecs <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutRemainingSecs((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
         }
-        const finalSettings: Settings = {
-          ...settings,
-          ...remoteSettings,
-          isSetup: true,
-        };
-        await saveSettings(finalSettings);
-      }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutRemainingSecs]);
 
-      // 2. Cashiers
-      if (storeData.cashiers && Array.isArray(storeData.cashiers) && storeData.cashiers.length > 0) {
-        const txCashier = db.transaction('cashiers', 'readwrite');
-        const cashierStore = txCashier.objectStore('cashiers');
-        for (const cashier of storeData.cashiers) {
-          cashierStore.put(cashier);
-        }
-        await new Promise<void>((resolve) => {
-          txCashier.oncomplete = () => resolve();
-          txCashier.onerror = () => resolve();
-        });
-        setCashiers(storeData.cashiers);
-        if (storeData.cashiers.length > 0 && !selectedCashierId) {
-          setSelectedCashierId(storeData.cashiers[0].id);
-        }
-      }
-
-      // 3. Products
-      if (storeData.products && Array.isArray(storeData.products) && storeData.products.length > 0) {
-        const txProd = db.transaction('products', 'readwrite');
-        const prodStore = txProd.objectStore('products');
-        for (const prod of storeData.products) {
-          prodStore.put(prod);
-        }
-        await new Promise<void>((resolve) => {
-          txProd.oncomplete = () => resolve();
-          txProd.onerror = () => resolve();
-        });
-      }
-
-      // 4. Categories
-      if (storeData.categories && Array.isArray(storeData.categories) && storeData.categories.length > 0) {
-        const txCat = db.transaction('categories', 'readwrite');
-        const catStore = txCat.objectStore('categories');
-        for (const cat of storeData.categories) {
-          catStore.put(cat);
-        }
-        await new Promise<void>((resolve) => {
-          txCat.oncomplete = () => resolve();
-          txCat.onerror = () => resolve();
-        });
-      }
-
-      // 5. Reset Requests
-      if (storeData.resetRequests && Array.isArray(storeData.resetRequests) && storeData.resetRequests.length > 0) {
-        const txReq = db.transaction('reset_requests', 'readwrite');
-        const reqStore = txReq.objectStore('reset_requests');
-        for (const req of storeData.resetRequests) {
-          reqStore.put(req);
-        }
-        await new Promise<void>((resolve) => {
-          txReq.oncomplete = () => resolve();
-          txReq.onerror = () => resolve();
-        });
-      }
-    } catch (err) {
-      console.error('Failed to hydrate data from cloud:', err);
-    }
-  };
-
-  const handleLoadFromCloud = async () => {
-    setIsConnectingCloud(true);
-    setErrorMsg(null);
-    try {
-      const result = await safeFetchJson<any>('/api/sync/state');
-      if (!result.success || !result.data) {
-        if (result.isHtmlFallback) {
-          throw new Error('Naka-host sa static deployment (walang active cloud server) o offline. Maaari kang mag-set ng PIN dito o mag-login nang lokal gamit ang "Mag-Login Diretso".');
-        }
-        throw new Error(result.message || 'Hindi ma-reach ang cloud server. Maaari kang mag-setup locally.');
-      }
-
-      await hydrateFromCloud(result.data);
-
-      alert('Nakuha na ang store data mula sa Cloud! Maaari ka nang mag-login gamit ang iyong PIN.');
-      window.location.reload();
-    } catch (err: any) {
-      console.warn('Cloud load warning:', err);
-      setErrorMsg(err.message || 'Hindi ma-connect sa cloud server. Maaari kang mag-setup o mag-login gamit ang lokal na database.');
-    } finally {
-      setIsConnectingCloud(false);
-    }
-  };
-
+  // Load cashiers from local IndexedDB
   useEffect(() => {
     const initData = async () => {
       const list = await getAllCashiers();
@@ -192,69 +122,36 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         setCashiers(list);
         if (!selectedCashierId) setSelectedCashierId(list[0].id);
       }
-
-      // If local storage is empty/fresh (e.g. Incognito) and online, safely check server data in background
-      if (isOnline) {
-        try {
-          const res = await safeFetchJson<any>('/api/sync/state');
-          if (res.success && res.data) {
-            await hydrateFromCloud(res.data);
-            const updatedList = await getAllCashiers();
-            if (updatedList.length > 0) {
-              setCashiers(updatedList);
-              setSelectedCashierId((prev) => prev || updatedList[0].id);
-            }
-          }
-        } catch (e) {
-          console.debug('Background cloud sync check:', e);
-        }
-      }
     };
-
     initData();
-  }, [isOnline]);
+  }, []);
 
+  // ----------------------------------------------------
+  // CASHIER LOGIN
+  // ----------------------------------------------------
   const handleCashierLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMsg(null);
 
-    let cashier = cashiers.find((c) => c.id === selectedCashierId);
-
-    // If cashier profile is missing or PIN doesn't match locally, attempt safe live cloud check
-    if ((!cashier || cashier.pin !== enteredPin) && isOnline) {
-      try {
-        setLoading(true);
-        const res = await safeFetchJson<any>('/api/sync/state');
-        if (res.success && res.data) {
-          await hydrateFromCloud(res.data);
-          const freshCashiers = await getAllCashiers();
-          setCashiers(freshCashiers);
-          cashier = freshCashiers.find((c) => c.id === selectedCashierId);
-        }
-      } catch (e) {
-        console.debug('Cloud cashier verification:', e);
-      } finally {
-        setLoading(false);
-      }
-    }
+    const cashier = cashiers.find((c) => c.id === selectedCashierId);
 
     if (!cashier) {
-      setErrorMsg('Pumili ng Cashier account.');
+      setErrorMsg('Please select a cashier profile.');
       return;
     }
 
     if (!enteredPin) {
-      setErrorMsg('Ilagay ang iyong 4-digit Cashier PIN.');
+      setErrorMsg('Please enter your 4-digit Cashier PIN.');
       return;
     }
 
     if (cashier.pin !== enteredPin) {
-      setErrorMsg('Maling Cashier PIN. Pakisubukang muli o mag-request ng reset.');
+      setErrorMsg('Incorrect Cashier PIN. Please try again or request a reset.');
       return;
     }
 
     if (!cashier.active) {
-      setErrorMsg('Ang cashier account na ito ay inactive. Makipag-ugnayan sa Admin.');
+      setErrorMsg('This cashier account is inactive. Please contact the Store Administrator.');
       return;
     }
 
@@ -267,54 +164,41 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     });
   };
 
+  // ----------------------------------------------------
+  // ADMIN LOGIN (Salted Hash Verification)
+  // ----------------------------------------------------
   const handleAdminLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMsg(null);
 
     if (!enteredPin) {
-      setErrorMsg('Ilagay ang Admin PIN.');
+      setErrorMsg('Please enter the Admin PIN.');
       return;
     }
 
-    let currentAdminPin = settings.adminPin;
-    let currentOwnerName = settings.ownerName;
+    setLoading(true);
+    try {
+      const isMatch = await verifyAdminPin(enteredPin, settings);
 
-    // If local PIN check fails or is missing, try checking against cloud server safely
-    if ((!currentAdminPin || enteredPin !== currentAdminPin) && isOnline) {
-      try {
-        setLoading(true);
-        const res = await safeFetchJson<any>('/api/sync/state');
-        if (res.success && res.data) {
-          await hydrateFromCloud(res.data);
-          if (res.data.settings?.adminPin) {
-            currentAdminPin = res.data.settings.adminPin;
-            currentOwnerName = res.data.settings.ownerName || currentOwnerName;
-          }
-        }
-      } catch (e) {
-        console.debug('Cloud Admin PIN verification:', e);
-      } finally {
+      if (!isMatch) {
+        setErrorMsg('Invalid Admin PIN. Please check your PIN or use Forgot Admin PIN.');
         setLoading(false);
+        return;
       }
+
+      onLoginSuccess({
+        role: 'admin',
+        id: 'admin',
+        name: settings.ownerName || 'Store Administrator',
+        loginTime: new Date().toISOString(),
+        isOfflineLogin: !isOnline,
+      });
+    } catch (err) {
+      console.error('Admin authentication error:', err);
+      setErrorMsg('Authentication error. Please try again.');
+    } finally {
+      setLoading(false);
     }
-
-    // Allow default PIN '1234' if not yet configured locally or if matching
-    const isPinMatch = 
-      (currentAdminPin && enteredPin === currentAdminPin) ||
-      (!currentAdminPin && (enteredPin === '1234' || enteredPin === settings.adminPin));
-
-    if (!isPinMatch) {
-      setErrorMsg('Maling Admin PIN. Pakitingnan ang iyong PIN o mag-setup.');
-      return;
-    }
-
-    onLoginSuccess({
-      role: 'admin',
-      id: 'admin',
-      name: currentOwnerName || 'Store Administrator',
-      loginTime: new Date().toISOString(),
-      isOfflineLogin: !isOnline,
-    });
   };
 
   const handlePinClear = () => {
@@ -322,7 +206,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setErrorMsg(null);
   };
 
-  const handleSubmitResetRequest = async (e: React.FormEvent) => {
+  // ----------------------------------------------------
+  // CASHIER RESET REQUEST
+  // ----------------------------------------------------
+  const handleSubmitCashierResetRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     const cashier = cashiers.find((c) => c.id === resetCashierId);
     if (!cashier) return;
@@ -343,7 +230,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         onTriggerSync().catch(() => {});
       }
       setResetSuccessNotice(
-        `Reset request registered for ${cashier.name}! Please contact the Admin directly via Phone Call, SMS, or Messenger to receive your temporary PIN.`
+        `Reset request registered for ${cashier.name}. Please contact the Store Administrator to receive your temporary PIN.`
       );
       setResetReason('');
     } catch (err) {
@@ -351,33 +238,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  const handleVerifyAdminQR = (token: string | null) => {
-    setShowQRScanner(false);
-    if (token === settings.recoveryToken) {
-      setShowResetAdminModal(true);
-    } else {
-      setErrorMsg('Invalid recovery QR code.');
-    }
-  };
-
-  const handleSaveNewAdminPin = async () => {
-    if (newAdminPin.length < 4) {
-      setErrorMsg('PIN must be at least 4 digits.');
-      return;
-    }
-    if (newAdminPin !== confirmAdminPin) {
-      setErrorMsg('PINs do not match.');
-      return;
-    }
-
-    const newToken = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
-    await saveSettings({ ...settings, adminPin: newAdminPin, recoveryToken: newToken });
-    setShowResetAdminModal(false);
-    setNewAdminPin('');
-    setConfirmAdminPin('');
-    alert('PIN reset successful! A new Recovery QR has been generated in Settings.');
-  };
-
+  // ----------------------------------------------------
+  // FIRST-TIME SETUP: SUBMIT & GENERATE RECOVERY CODE
+  // ----------------------------------------------------
   const handleSetupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -388,7 +251,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
 
     if (setupPin !== setupConfirmPin) {
-      setErrorMsg('Admin PINs do not match.');
+      setErrorMsg('Admin PINs do not match. Please re-enter.');
       return;
     }
 
@@ -402,55 +265,280 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       return;
     }
 
-    const newToken = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
-    const updatedSettings: Settings = {
-      ...settings,
-      adminPin: setupPin,
-      storeName: setupStoreName.trim(),
-      ownerName: setupOwnerName.trim(),
-      recoveryToken: newToken,
-      isSetup: true,
-    };
-
     try {
-      await saveSettings(updatedSettings);
-      setGeneratedToken(newToken);
-      setSetupStep('qr');
+      setLoading(true);
+      // Generate cryptographic credentials (salted hashes + unique recovery code)
+      const creds = await createAdminAuthCredentials(setupPin);
 
-      // Attempt background sync if online without blocking
-      if (isOnline) {
-        safeFetchJson('/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ settings: updatedSettings }),
-        }).catch(() => {});
-      }
+      const updatedSettings: Settings = {
+        ...settings,
+        storeName: setupStoreName.trim(),
+        ownerName: setupOwnerName.trim(),
+        adminPin: setupPin, // Keep for backward compat
+        adminPinHash: creds.adminPinHash,
+        adminPinSalt: creds.adminPinSalt,
+        recoveryCodeHash: creds.recoveryCodeHash,
+        recoveryCodeSalt: creds.recoveryCodeSalt,
+        recoveryCodeCreatedAt: creds.recoveryCodeCreatedAt,
+        isSetup: true,
+      };
+
+      await saveSettings(updatedSettings);
+      setGeneratedRecoveryCode(creds.recoveryCode);
+      setSetupStep('recoveryCode');
+      setSetupConfirmedSaved(false);
     } catch (err) {
       console.error('Failed to complete Admin Setup:', err);
-      setErrorMsg('Failed to save settings. Please try again.');
+      setErrorMsg('Failed to initialize Admin credentials. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleSkipToLogin = async () => {
-    setForceShowLogin(true);
-    setErrorMsg(null);
-    if (isOnline) {
-      try {
-        const res = await safeFetchJson<any>('/api/sync/state');
-        if (res.success && res.data) {
-          await hydrateFromCloud(res.data);
-        }
-      } catch (e) {
-        // ignore
-      }
+  const handleCopySetupCode = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedRecoveryCode);
+      setSetupCopied(true);
+      setTimeout(() => setSetupCopied(false), 2500);
+    } catch (e) {
+      console.warn('Clipboard write failed:', e);
     }
   };
 
-  const handleFinishSetupAndLogin = () => {
+  const handleDownloadSetupDocument = () => {
+    const content = generateRecoveryCodeDocument(
+      generatedRecoveryCode,
+      setupStoreName,
+      setupOwnerName
+    );
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `admin-recovery-code-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintSetupDocument = () => {
+    const printWindow = window.open('', '_blank', 'width=650,height=750');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    const docText = generateRecoveryCodeDocument(
+      generatedRecoveryCode,
+      setupStoreName,
+      setupOwnerName
+    );
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Admin Recovery Code — Mini Universal POS</title>
+          <style>
+            body { font-family: monospace; padding: 30px; line-height: 1.5; font-size: 13px; color: #000; background: #fff; }
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+          </style>
+        </head>
+        <body>
+          <pre>${docText}</pre>
+          <script>
+            window.onload = function() {
+              setTimeout(function() { window.print(); }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleCompleteSetupAndLogin = () => {
+    if (!setupConfirmedSaved) return;
     onLoginSuccess({
       role: 'admin',
       id: 'admin',
-      name: setupOwnerName.trim(),
+      name: setupOwnerName.trim() || 'Store Administrator',
+      loginTime: new Date().toISOString(),
+      isOfflineLogin: !isOnline,
+    });
+  };
+
+  // ----------------------------------------------------
+  // FORGOT ADMIN PIN & OFFLINE RECOVERY FLOW
+  // ----------------------------------------------------
+  const handleOpenForgotAdminModal = () => {
+    setErrorMsg(null);
+    setRecoveryStep('enterCode');
+    setRecoveryEnteredCode('');
+    setRecoveryNewPin('');
+    setRecoveryConfirmPin('');
+    setReplacementCode('');
+    setRecoveryCopied(false);
+    setRecoveryConfirmedSaved(false);
+    setShowForgotAdminModal(true);
+  };
+
+  const handleVerifyRecoveryCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+
+    if (lockoutRemainingSecs > 0) {
+      setErrorMsg(`Too many failed attempts. Please wait ${lockoutRemainingSecs}s before retrying.`);
+      return;
+    }
+
+    if (!recoveryEnteredCode.trim()) {
+      setErrorMsg('Please enter your Recovery Code.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const isValid = await verifyRecoveryCode(recoveryEnteredCode, settings);
+
+      if (!isValid) {
+        const nextAttempts = recoveryFailedAttempts + 1;
+        setRecoveryFailedAttempts(nextAttempts);
+
+        if (nextAttempts >= 5) {
+          setLockoutRemainingSecs(30);
+          setErrorMsg('Too many invalid attempts. Temporary security delay active (30s).');
+        } else {
+          setErrorMsg(`Invalid Recovery Code. Please verify your code. (${5 - nextAttempts} attempts remaining)`);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Valid recovery code: advance to new PIN creation
+      setRecoveryFailedAttempts(0);
+      setRecoveryStep('newPin');
+    } catch (err) {
+      console.error('Recovery code validation error:', err);
+      setErrorMsg('Failed to validate Recovery Code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveNewAdminPinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+
+    if (recoveryNewPin.length < 4 || recoveryNewPin.length > 6 || !/^\d+$/.test(recoveryNewPin)) {
+      setErrorMsg('New Admin PIN must be 4 to 6 numeric digits.');
+      return;
+    }
+
+    if (recoveryNewPin !== recoveryConfirmPin) {
+      setErrorMsg('PINs do not match. Please re-enter.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Generate new cryptographic credentials and replace old recovery code
+      const newCreds = await createAdminAuthCredentials(recoveryNewPin);
+
+      // 2. Update ONLY authentication records in settings (preserves all products, sales, reports, cashiers)
+      const updatedSettings: Settings = {
+        ...settings,
+        adminPin: recoveryNewPin,
+        adminPinHash: newCreds.adminPinHash,
+        adminPinSalt: newCreds.adminPinSalt,
+        recoveryCodeHash: newCreds.recoveryCodeHash,
+        recoveryCodeSalt: newCreds.recoveryCodeSalt,
+        recoveryCodeCreatedAt: newCreds.recoveryCodeCreatedAt,
+        recoveryToken: undefined, // Invalidate old legacy token
+        failedRecoveryAttempts: 0,
+        recoveryLockoutUntil: undefined,
+      };
+
+      await saveSettings(updatedSettings);
+
+      setReplacementCode(newCreds.recoveryCode);
+      setRecoveryStep('saveReplacement');
+      setRecoveryConfirmedSaved(false);
+    } catch (err) {
+      console.error('Failed to reset Admin PIN:', err);
+      setErrorMsg('Failed to save new Admin PIN. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyReplacementCode = async () => {
+    try {
+      await navigator.clipboard.writeText(replacementCode);
+      setRecoveryCopied(true);
+      setTimeout(() => setRecoveryCopied(false), 2500);
+    } catch (e) {
+      console.warn('Clipboard write failed:', e);
+    }
+  };
+
+  const handleDownloadReplacementDocument = () => {
+    const content = generateRecoveryCodeDocument(
+      replacementCode,
+      settings.storeName,
+      settings.ownerName
+    );
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `admin-replacement-recovery-code-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintReplacementDocument = () => {
+    const printWindow = window.open('', '_blank', 'width=650,height=750');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    const docText = generateRecoveryCodeDocument(
+      replacementCode,
+      settings.storeName,
+      settings.ownerName
+    );
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Replacement Admin Recovery Code — Mini Universal POS</title>
+          <style>
+            body { font-family: monospace; padding: 30px; line-height: 1.5; font-size: 13px; color: #000; background: #fff; }
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+          </style>
+        </head>
+        <body>
+          <pre>${docText}</pre>
+          <script>
+            window.onload = function() {
+              setTimeout(function() { window.print(); }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleFinishRecoveryAndLogin = () => {
+    if (!recoveryConfirmedSaved) return;
+    setShowForgotAdminModal(false);
+    onLoginSuccess({
+      role: 'admin',
+      id: 'admin',
+      name: settings.ownerName || 'Store Administrator',
       loginTime: new Date().toISOString(),
       isOfflineLogin: !isOnline,
     });
@@ -466,15 +554,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       <div className="w-full max-w-md bg-slate-800/90 backdrop-blur-2xl border border-slate-700/80 rounded-3xl shadow-2xl p-6 md:p-8 relative z-10 space-y-6">
         
         {(!settings.isSetup && !forceShowLogin) ? (
-          // FIRST-TIME ADMIN SETUP FLOW
+          // ==========================================
+          // FIRST-TIME LOCAL SETUP FLOW
+          // ==========================================
           setupStep === 'form' ? (
             <form onSubmit={handleSetupSubmit} className="space-y-4 text-left">
               <div className="text-center pb-2">
                 <div className="inline-flex p-3 rounded-2xl bg-indigo-600/20 text-indigo-400 mb-2">
                   <ShieldAlert className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-white">Create Admin Account</h3>
-                <p className="text-xs text-slate-400">Set up your security PIN and store profile to start</p>
+                <h3 className="text-lg font-bold text-white">Create Local Admin PIN</h3>
+                <p className="text-xs text-slate-400">
+                  Set up your store profile and secure local Admin PIN (4–6 digits)
+                </p>
               </div>
 
               <div>
@@ -484,46 +576,55 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   required
                   value={setupStoreName}
                   onChange={(e) => setSetupStoreName(e.target.value)}
-                  placeholder="e.g. My Awesome Store"
+                  placeholder="e.g. My Retail Store"
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Owner Name</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Store Owner / Admin Name</label>
                 <input
                   type="text"
                   required
                   value={setupOwnerName}
                   onChange={(e) => setSetupOwnerName(e.target.value)}
-                  placeholder="e.g. Juan dela Cruz"
+                  placeholder="e.g. Jerome Urbano"
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Create Admin PIN (4-6 digits)</label>
-                <input
-                  type="password"
-                  required
-                  maxLength={6}
-                  value={setupPin}
-                  onChange={(e) => setSetupPin(e.target.value)}
-                  placeholder="••••"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-lg font-mono text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
-                />
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Create Admin PIN (4–6 digits)</label>
+                <div className="relative">
+                  <input
+                    type={showPin ? 'text' : 'password'}
+                    required
+                    maxLength={6}
+                    value={setupPin}
+                    onChange={(e) => setSetupPin(e.target.value)}
+                    placeholder="••••"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-lg font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPin(!showPin)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  >
+                    {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Confirm Admin PIN</label>
                 <input
-                  type="password"
+                  type={showPin ? 'text' : 'password'}
                   required
                   maxLength={6}
                   value={setupConfirmPin}
                   onChange={(e) => setSetupConfirmPin(e.target.value)}
                   placeholder="••••"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-lg font-mono text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-lg font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
 
@@ -536,98 +637,108 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white text-sm shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={loading}
+                className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white text-sm shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <span>Generate Recovery QR & Setup</span>
+                <span>{loading ? 'Creating Credentials...' : 'Generate Recovery Code & Proceed'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
-              <div className="relative flex py-1 items-center shrink-0">
-                <div className="flex-grow border-t border-slate-700/60"></div>
-                <span className="flex-shrink mx-3 text-slate-500 text-[10px] font-semibold tracking-wider uppercase">Or Sync Existing Cloud Store</span>
-                <div className="flex-grow border-t border-slate-700/60"></div>
-              </div>
-
-              <button
-                type="button"
-                disabled={isConnectingCloud}
-                onClick={handleLoadFromCloud}
-                className="w-full py-2.5 px-4 rounded-xl border border-slate-700 hover:bg-slate-800 font-bold text-slate-300 text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                <Cloud className={`w-4 h-4 text-sky-400 ${isConnectingCloud ? 'animate-pulse' : ''}`} />
-                <span>{isConnectingCloud ? 'Connecting to Cloud...' : 'Retrieve Existing Store from Cloud'}</span>
-              </button>
-
-              <div className="text-center pt-2 shrink-0">
+              <div className="text-center pt-2">
                 <button
                   type="button"
-                  onClick={handleSkipToLogin}
+                  onClick={() => {
+                    setForceShowLogin(true);
+                    setErrorMsg(null);
+                  }}
                   className="text-[11px] font-semibold text-slate-400 hover:text-white hover:underline transition-all cursor-pointer"
                 >
-                  Already set up? Skip directly to Login Screen
+                  Already set up? Skip directly to Local PIN Lock
                 </button>
               </div>
             </form>
           ) : (
-            // SETUP RECOVERY QR SCREEN
+            // ==========================================
+            // SETUP: DEDICATED SAVE RECOVERY CODE SCREEN
+            // ==========================================
             <div className="space-y-4 text-center">
               <div className="inline-flex p-3 rounded-2xl bg-emerald-600/20 text-emerald-400">
-                <CheckCircle2 className="w-6 h-6" />
+                <ShieldCheck className="w-7 h-7" />
               </div>
-              <h3 className="text-lg font-bold text-white">Setup Successful!</h3>
-              <p className="text-xs text-slate-400">
-                Your Admin PIN has been configured. We have automatically generated your unique Admin Recovery QR code.
+              <h3 className="text-lg font-bold text-white">Save Your Admin Recovery Code</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Your local Admin PIN has been configured. In case you ever forget your Admin PIN, this unique <strong>Recovery Code</strong> is the <strong>only way</strong> to reset your PIN offline.
               </p>
 
-              <div className="bg-slate-900 p-6 rounded-2xl flex flex-col items-center border border-slate-700 justify-center">
-                <QRCodeCanvas id="setup-qr-canvas" value={generatedToken} size={180} includeMargin={true} />
-                
-                <p className="text-[10px] text-amber-400 font-semibold mt-4 text-center max-w-xs leading-relaxed">
-                  "Keep your Admin Recovery QR Code in a safe place. Anyone who has access to this recovery QR may be able to recover the Admin account."
+              {/* Recovery Code Display Badge */}
+              <div className="bg-slate-950 p-4 rounded-2xl border border-indigo-500/40 space-y-2">
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
+                  Official Admin Recovery Code (Offline Only)
+                </span>
+                <div className="text-lg md:text-xl font-mono font-black text-amber-300 tracking-wider select-all py-1">
+                  {generatedRecoveryCode}
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  This code will NOT be displayed again during normal POS usage.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              {/* Action Buttons: Copy, Download, Print */}
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    const canvas = document.getElementById('setup-qr-canvas') as HTMLCanvasElement;
-                    if (canvas) {
-                      const url = canvas.toDataURL('image/png');
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'admin-recovery-qr.png';
-                      a.click();
-                    }
-                  }}
-                  className="py-2.5 rounded-xl border border-slate-700 font-semibold text-slate-300 hover:bg-slate-800 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={handleCopySetupCode}
+                  className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
-                  <Download className="w-4 h-4 text-blue-400" />
-                  <span>Download PNG</span>
+                  {setupCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-blue-400" />}
+                  <span>{setupCopied ? 'Copied!' : 'Copy Code'}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    window.print();
-                  }}
-                  className="py-2.5 rounded-xl border border-slate-700 font-semibold text-slate-300 hover:bg-slate-800 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={handleDownloadSetupDocument}
+                  className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
-                  <Printer className="w-4 h-4 text-indigo-400" />
-                  <span>Print QR</span>
+                  <Download className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Download .txt</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintSetupDocument}
+                  className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Print Sheet</span>
                 </button>
               </div>
 
+              {/* Mandatory Confirmation Checkbox */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 text-left cursor-pointer hover:border-slate-600 transition">
+                <input
+                  type="checkbox"
+                  checked={setupConfirmedSaved}
+                  onChange={(e) => setSetupConfirmedSaved(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer h-4 w-4"
+                />
+                <span className="text-[11px] text-slate-300 leading-snug">
+                  I confirm that I have copied, printed, or safely stored this Recovery Code offline. I understand it cannot be recovered from any online server.
+                </span>
+              </label>
+
               <button
                 type="button"
-                onClick={handleFinishSetupAndLogin}
-                className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white text-sm shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={!setupConfirmedSaved}
+                onClick={handleCompleteSetupAndLogin}
+                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>Finish Setup & Enter POS</span>
+                <span>Complete Setup & Enter POS</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           )
         ) : (
+          // ==========================================
+          // MAIN LOCAL PIN LOCK & ROLE-BASED ACCESS
+          // ==========================================
           <>
             {/* Brand Header */}
             <div className="text-center space-y-2">
@@ -639,33 +750,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   {settings.storeName || 'Mini Universal POS'}
                 </h1>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Secure Offline-First Terminal • Multi-User System
+                  Local PIN Lock & Role-Based Access • 100% Offline
                 </p>
               </div>
-            </div>
-
-            {/* Network & Offline Status Banner */}
-            <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-900/60 border border-slate-700/50 text-xs">
-              <div className="flex items-center gap-2">
-                {isOnline ? (
-                  <>
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="font-semibold text-emerald-400 flex items-center gap-1">
-                      <Wifi className="w-3.5 h-3.5" /> Online Cloud Sync
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                    <span className="font-semibold text-amber-400 flex items-center gap-1">
-                      <WifiOff className="w-3.5 h-3.5" /> Offline Mode (Local Auth)
-                    </span>
-                  </>
-                )}
-              </div>
-              <span className="text-[11px] text-slate-400">
-                {isOnline ? 'Realtime Connected' : 'Works 100% Offline'}
-              </span>
             </div>
 
             {/* Role Segmented Switcher */}
@@ -677,14 +764,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   setEnteredPin('');
                   setErrorMsg(null);
                 }}
-                className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all ${
+                className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all cursor-pointer ${
                   roleTab === 'cashier'
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <UserCheck className="w-4 h-4" />
-                <span>Cashier Terminal</span>
+                <span>Cashier Access</span>
               </button>
               <button
                 type="button"
@@ -693,14 +780,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   setEnteredPin('');
                   setErrorMsg(null);
                 }}
-                className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all ${
+                className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all cursor-pointer ${
                   roleTab === 'admin'
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <ShieldAlert className="w-4 h-4" />
-                <span>Admin Portal</span>
+                <span>Admin Access</span>
               </button>
             </div>
 
@@ -719,7 +806,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                         setEnteredPin('');
                         setErrorMsg(null);
                       }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-hidden focus:border-blue-500"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-hidden focus:border-blue-500 cursor-pointer"
                     >
                       {cashiers.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -729,15 +816,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     </select>
                   ) : (
                     <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-900/50 text-xs text-amber-300">
-                      No cashier profiles registered yet. Please ask your Store Administrator to create your cashier account.
+                      No cashier accounts registered yet. The Store Administrator can add cashier profiles in Admin Settings.
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-900/50 text-xs text-indigo-300 flex items-center justify-between">
                   <div>
-                    <span className="font-bold block text-white">Full Admin Access</span>
-                    <span>Manage products, cashiers, stock, reports & data</span>
+                    <span className="font-bold block text-white">Full Administrator Access</span>
+                    <span>Manage products, cashiers, stock, reports, and store data</span>
                   </div>
                   <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
                 </div>
@@ -752,8 +839,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   {roleTab === 'admin' && (
                     <button
                       type="button"
-                      onClick={() => setShowQRScanner(true)}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 underline font-medium"
+                      onClick={handleOpenForgotAdminModal}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 underline font-medium cursor-pointer"
                     >
                       Forgot Admin PIN?
                     </button>
@@ -764,9 +851,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                       onClick={() => {
                         setResetCashierId(selectedCashierId || (cashiers[0]?.id ?? ''));
                         setResetSuccessNotice(null);
-                        setShowResetModal(true);
+                        setShowCashierResetModal(true);
                       }}
-                      className="text-xs text-blue-400 hover:text-blue-300 underline font-medium"
+                      className="text-xs text-blue-400 hover:text-blue-300 underline font-medium cursor-pointer"
                     >
                       Forgot PIN?
                     </button>
@@ -774,7 +861,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </div>
                 <div className="relative">
                   <input
-                    type="password"
+                    type={showPin ? 'text' : 'password'}
                     disabled={roleTab === 'cashier' && cashiers.length === 0}
                     value={enteredPin}
                     onChange={(e) => {
@@ -787,19 +874,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                         else handleAdminLogin();
                       }
                     }}
-                    placeholder={roleTab === 'cashier' && cashiers.length === 0 ? "Disabled" : "Enter PIN"}
+                    placeholder={roleTab === 'cashier' && cashiers.length === 0 ? 'Disabled' : 'Enter PIN'}
                     autoFocus
                     className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3 px-4 text-center text-xl font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-blue-500 shadow-inner disabled:opacity-40 disabled:cursor-not-allowed"
                   />
-                  {enteredPin.length > 0 && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={handlePinClear}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white px-2 py-1 rounded-md bg-slate-800"
+                      onClick={() => setShowPin(!showPin)}
+                      className="text-slate-400 hover:text-white p-1"
                     >
-                      Clear
+                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
-                  )}
+                    {enteredPin.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handlePinClear}
+                        className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-md bg-slate-800 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -814,7 +910,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               {/* Submit Action Button */}
               <button
                 type="button"
-                disabled={roleTab === 'cashier' && cashiers.length === 0}
+                disabled={(roleTab === 'cashier' && cashiers.length === 0) || loading}
                 onClick={roleTab === 'cashier' ? () => handleCashierLogin() : () => handleAdminLogin()}
                 className={`w-full py-3.5 px-4 rounded-2xl font-bold text-white text-sm shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   roleTab === 'cashier'
@@ -822,21 +918,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
                 }`}
               >
-                <span>{roleTab === 'cashier' ? 'Enter POS Terminal' : 'Enter Admin Dashboard'}</span>
+                <span>{roleTab === 'cashier' ? 'Unlock POS Terminal' : 'Unlock Admin Dashboard'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
 
             {/* Footer Hint */}
-            <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80 space-y-2">
-              <div>System Creator: Jerome Urbano • Version 5.0 (Offline-Capable)</div>
+            <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80 space-y-1.5">
+              <div>Offline Local PIN Lock • Protected Business Records</div>
               {forceShowLogin && (
                 <button
                   type="button"
                   onClick={() => setForceShowLogin(false)}
                   className="text-indigo-400 hover:text-indigo-300 font-bold hover:underline transition-all cursor-pointer block w-full text-center"
                 >
-                  Back to Setup / Cloud Import
+                  Back to Setup Screen
                 </button>
               )}
             </div>
@@ -844,17 +940,247 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         )}
       </div>
 
-      {/* Cashier Forgot PIN / Reset Request Modal */}
-      {showResetModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl p-6 shadow-2xl space-y-4">
+      {/* ==================================================== */}
+      {/* MODAL: FORGOT ADMIN PIN & OFFLINE RECOVERY FLOW       */}
+      {/* ==================================================== */}
+      {showForgotAdminModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in select-none">
+          <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl p-6 shadow-2xl space-y-5 text-left relative">
+            <button
+              type="button"
+              onClick={() => setShowForgotAdminModal(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white transition p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {recoveryStep === 'enterCode' && (
+              <form onSubmit={handleVerifyRecoveryCodeSubmit} className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
+                    <KeyRound className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-white">Forgot Admin PIN?</h3>
+                    <p className="text-xs text-slate-400">
+                      Step 1 of 3: Enter your saved offline Recovery Code
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-300 leading-relaxed space-y-1">
+                  <p className="font-bold text-white flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                    Offline Local Validation
+                  </p>
+                  <p>
+                    Enter the Recovery Code generated during setup (e.g. <code>RC-XXXX-XXXX-XXXX</code>). Your business records and sales history will remain completely safe.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Enter Recovery Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    disabled={lockoutRemainingSecs > 0}
+                    value={recoveryEnteredCode}
+                    onChange={(e) => {
+                      setRecoveryEnteredCode(e.target.value);
+                      setErrorMsg(null);
+                    }}
+                    placeholder="RC-XXXX-XXXX-XXXX"
+                    autoFocus
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-base font-mono tracking-wider text-amber-300 uppercase placeholder-slate-600 focus:outline-hidden focus:border-amber-500 disabled:opacity-50"
+                  />
+                </div>
+
+                {errorMsg && (
+                  <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/80 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotAdminModal(false)}
+                    className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 text-xs font-semibold hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading || lockoutRemainingSecs > 0}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 font-bold text-white text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>{loading ? 'Verifying Code...' : 'Verify Recovery Code'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {recoveryStep === 'newPin' && (
+              <form onSubmit={handleSaveNewAdminPinSubmit} className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 shrink-0">
+                    <Lock className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg text-white">Set New Admin PIN</h3>
+                    <p className="text-xs text-slate-400">
+                      Step 2 of 3: Recovery Code verified. Enter your new Admin PIN
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    New Admin PIN (4–6 digits)
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    maxLength={6}
+                    value={recoveryNewPin}
+                    onChange={(e) => {
+                      setRecoveryNewPin(e.target.value);
+                      setErrorMsg(null);
+                    }}
+                    placeholder="••••"
+                    autoFocus
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-lg font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Confirm New Admin PIN
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    maxLength={6}
+                    value={recoveryConfirmPin}
+                    onChange={(e) => {
+                      setRecoveryConfirmPin(e.target.value);
+                      setErrorMsg(null);
+                    }}
+                    placeholder="••••"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-lg font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+
+                {errorMsg && (
+                  <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/80 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>{loading ? 'Saving New PIN...' : 'Save PIN & Generate Replacement Code'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </form>
+            )}
+
+            {recoveryStep === 'saveReplacement' && (
+              <div className="space-y-4 text-center">
+                <div className="inline-flex p-3 rounded-2xl bg-emerald-600/20 text-emerald-400">
+                  <CheckCircle2 className="w-7 h-7" />
+                </div>
+                <h3 className="font-bold text-lg text-white">Save Your Replacement Recovery Code</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Your new Admin PIN is saved! Your previous Recovery Code has been <strong>invalidated</strong>. Save your new replacement code below:
+                </p>
+
+                <div className="bg-slate-950 p-4 rounded-2xl border border-emerald-500/40 space-y-2">
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
+                    New Active Recovery Code (Single-Use)
+                  </span>
+                  <div className="text-lg md:text-xl font-mono font-black text-amber-300 tracking-wider select-all py-1">
+                    {replacementCode}
+                  </div>
+                </div>
+
+                {/* Actions: Copy, Download, Print */}
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyReplacementCode}
+                    className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {recoveryCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-blue-400" />}
+                    <span>{recoveryCopied ? 'Copied!' : 'Copy Code'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadReplacementDocument}
+                    className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Download .txt</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintReplacementDocument}
+                    className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Print Sheet</span>
+                  </button>
+                </div>
+
+                {/* Mandatory Confirmation Checkbox */}
+                <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 text-left cursor-pointer hover:border-slate-600 transition">
+                  <input
+                    type="checkbox"
+                    checked={recoveryConfirmedSaved}
+                    onChange={(e) => setRecoveryConfirmedSaved(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer h-4 w-4"
+                  />
+                  <span className="text-[11px] text-slate-300 leading-snug">
+                    I have safely copied, saved, or printed this replacement Recovery Code offline.
+                  </span>
+                </label>
+
+                <button
+                  type="button"
+                  disabled={!recoveryConfirmedSaved}
+                  onClick={handleFinishRecoveryAndLogin}
+                  className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Finish Recovery & Unlock Admin Dashboard</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* MODAL: CASHIER FORGOT PIN REQUEST                    */}
+      {/* ==================================================== */}
+      {showCashierResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in select-none">
+          <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-3xl p-6 shadow-2xl space-y-4 text-left">
             <div className="flex items-center gap-3 text-white">
               <div className="p-2.5 rounded-xl bg-blue-600/20 text-blue-400">
                 <KeyRound className="w-6 h-6" />
               </div>
               <div>
                 <h3 className="font-bold text-lg text-white">Request Cashier PIN Reset</h3>
-                <p className="text-xs text-slate-400">Submit an access reset request to the Store Admin</p>
+                <p className="text-xs text-slate-400">Submit an access reset request to the Store Administrator</p>
               </div>
             </div>
 
@@ -873,28 +1199,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     <PhoneCall className="w-3.5 h-3.5 text-blue-400" /> Next Step:
                   </p>
                   <p>
-                    Please call or text the Store Admin. Once approved in the Admin Dashboard, the Admin will provide you with a temporary PIN.
+                    Please inform your Store Administrator. Once approved in the Admin Dashboard, the Admin will provide you with a temporary PIN.
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setShowResetModal(false)}
-                  className="w-full py-2.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-500"
+                  onClick={() => setShowCashierResetModal(false)}
+                  className="w-full py-2.5 rounded-xl bg-blue-600 text-white font-semibold text-sm hover:bg-blue-500 cursor-pointer"
                 >
-                  Back to Login
+                  Return to Login
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSubmitResetRequest} className="space-y-4">
+              <form onSubmit={handleSubmitCashierResetRequest} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Select Your Cashier Profile
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Select Cashier Profile
                   </label>
                   <select
                     value={resetCashierId}
                     onChange={(e) => setResetCashierId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white focus:outline-hidden focus:border-blue-500"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-sm text-white cursor-pointer"
                   >
                     {cashiers.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -905,92 +1231,35 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Reason / Note for Admin (Optional)
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Reason / Notes (Optional)
                   </label>
                   <textarea
                     rows={2}
                     value={resetReason}
                     onChange={(e) => setResetReason(e.target.value)}
-                    placeholder="e.g. Forgot PIN after shift change"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-blue-500"
+                    placeholder="e.g. Forgot my 4-digit PIN..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-600"
                   />
                 </div>
 
-                <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-900/60 text-xs text-amber-300">
-                  <span className="font-bold block mb-0.5">Note:</span>
-                  Cashiers cannot directly reset their own credentials. This request will notify the Admin. Contact the Admin separately via Phone, SMS, or Messenger to receive your new PIN.
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
+                <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowResetModal(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-slate-700 text-slate-200 font-semibold text-xs hover:bg-slate-600"
+                    onClick={() => setShowCashierResetModal(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-700 text-slate-300 text-xs font-semibold hover:bg-slate-700 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-semibold text-xs hover:bg-blue-500"
+                    className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500 cursor-pointer"
                   >
                     Submit Request
                   </button>
                 </div>
               </form>
             )}
-          </div>
-        </div>
-      )}
-      {/* Admin PIN Recovery - QR Scanner */}
-      {showQRScanner && (
-        <QRScannerModal
-          onScan={handleVerifyAdminQR}
-          onClose={() => setShowQRScanner(false)}
-        />
-      )}
-
-      {/* Admin PIN Recovery - Reset PIN Modal */}
-      {showResetAdminModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-sm bg-slate-800 border border-slate-700 rounded-3xl p-6 shadow-2xl space-y-4">
-            <h3 className="text-lg font-bold text-white">Reset Admin PIN</h3>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSaveNewAdminPin();
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">New PIN</label>
-                <input
-                  type="password"
-                  required
-                  maxLength={6}
-                  value={newAdminPin}
-                  onChange={(e) => setNewAdminPin(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-center font-mono"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Confirm New PIN</label>
-                <input
-                  type="password"
-                  required
-                  maxLength={6}
-                  value={confirmAdminPin}
-                  onChange={(e) => setConfirmAdminPin(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-center font-mono"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-500 transition"
-              >
-                Save New PIN
-              </button>
-            </form>
           </div>
         </div>
       )}

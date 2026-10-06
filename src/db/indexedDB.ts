@@ -137,7 +137,14 @@ export interface Settings {
   taxRate: number;
   lowStockThreshold: number;
   adminPin: string;
+  adminPinHash?: string;
+  adminPinSalt?: string;
+  recoveryCodeHash?: string;
+  recoveryCodeSalt?: string;
+  recoveryCodeCreatedAt?: string;
   recoveryToken?: string;
+  failedRecoveryAttempts?: number;
+  recoveryLockoutUntil?: string;
   darkMode: boolean;
   ownerName: string;
   animatedBackground?: boolean;
@@ -1018,6 +1025,20 @@ export async function exportAllDataAsJSON(): Promise<POSBackupData> {
     })
   );
 
+  // Strip authentication secrets from exported business settings
+  const sanitizedSettings: Settings = {
+    ...settings,
+    adminPin: '••••',
+    adminPinHash: undefined,
+    adminPinSalt: undefined,
+    recoveryCodeHash: undefined,
+    recoveryCodeSalt: undefined,
+    recoveryCodeCreatedAt: undefined,
+    recoveryToken: undefined,
+    failedRecoveryAttempts: undefined,
+    recoveryLockoutUntil: undefined,
+  };
+
   const backupData: POSBackupData = {
     app: 'MiniUniversalPOS',
     version: 5,
@@ -1032,7 +1053,7 @@ export async function exportAllDataAsJSON(): Promise<POSBackupData> {
       historyCount: productHistory.length,
       storeName: settings.storeName || 'Mini POS',
     },
-    settings,
+    settings: sanitizedSettings,
     categories,
     products: serializedProducts,
     transactions,
@@ -1134,14 +1155,13 @@ export async function importDataFromJSON(
     preMergeBackupCreated = await createPreMergeSafetySnapshot();
   }
 
-  // If replace mode, clear store tables safely using clear() inside transactions
+  // If replace mode, clear data tables safely but preserve settings to keep local auth credentials intact
   if (mode === 'replace') {
     const storesToClear = [
       'products',
       'categories',
       'transactions',
       'customers',
-      'settings',
       'product_history',
       'cashiers',
       'stock_movements',
@@ -1168,22 +1188,25 @@ export async function importDataFromJSON(
   let stockMovementsCount = 0;
   let settingsRestored = false;
 
-  // Restore/Merge Settings
+  // Restore/Merge Business Settings while strictly preserving local auth credentials
   if (backup.settings) {
-    if (mode === 'replace') {
-      await saveSettings(backup.settings, db);
-      settingsRestored = true;
-    } else {
-      // In merge mode, preserve store name & pin unless current is default
-      const current = await getSettings(db);
-      const mergedSettings: Settings = {
-        ...backup.settings,
-        storeName: current.storeName || backup.settings.storeName,
-        adminPin: current.adminPin || backup.settings.adminPin,
-      };
-      await saveSettings(mergedSettings, db);
-      settingsRestored = true;
-    }
+    const current = await getSettings(db);
+    const safeSettingsToSave: Settings = {
+      ...backup.settings,
+      // Strictly preserve local authentication credentials (PIN and Recovery Code)
+      adminPin: current.adminPin || backup.settings.adminPin || '1234',
+      adminPinHash: current.adminPinHash,
+      adminPinSalt: current.adminPinSalt,
+      recoveryCodeHash: current.recoveryCodeHash,
+      recoveryCodeSalt: current.recoveryCodeSalt,
+      recoveryCodeCreatedAt: current.recoveryCodeCreatedAt,
+      recoveryToken: current.recoveryToken,
+      failedRecoveryAttempts: current.failedRecoveryAttempts,
+      recoveryLockoutUntil: current.recoveryLockoutUntil,
+      isSetup: current.isSetup !== undefined ? current.isSetup : true,
+    };
+    await saveSettings(safeSettingsToSave, db);
+    settingsRestored = true;
   }
 
   // Restore/Merge Categories

@@ -3,7 +3,6 @@
  */
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { QRCodeCanvas } from 'qrcode.react';
 import {
   Settings as SettingsIcon,
   Store,
@@ -30,7 +29,10 @@ import {
   ShoppingBag,
   Check,
   X,
-  QrCode
+  KeyRound,
+  Copy,
+  ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Settings,
@@ -45,8 +47,15 @@ import {
   importDataFromJSON,
   validateBackupData,
   POSBackupData,
-  ImportSummary
+  ImportSummary,
 } from '../db/indexedDB';
+import {
+  createAdminAuthCredentials,
+  verifyAdminPin,
+  generateCryptoSalt,
+  hashSecretWithSalt,
+  generateRecoveryCodeDocument,
+} from '../utils/cryptoAuth';
 
 interface SettingsViewProps {
   settings: Settings;
@@ -91,18 +100,102 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     message: string;
     details: string;
   } | null>(null);
-  const [showQr, setShowQr] = useState(false);
+  const [showGenerateRecoveryModal, setShowGenerateRecoveryModal] = useState(false);
+  const [genVerifyPin, setGenVerifyPin] = useState('');
+  const [newlyGeneratedCode, setNewlyGeneratedCode] = useState('');
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [codeConfirmedSaved, setCodeConfirmedSaved] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
 
-  // Helper to generate secure token
-  const generateNewToken = () => {
-    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+  const handleGenerateRecoveryCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGenError(null);
+
+    const isMatch = await verifyAdminPin(genVerifyPin, settings);
+    if (!isMatch) {
+      setGenError('Incorrect Admin PIN. Verification failed.');
+      return;
+    }
+
+    try {
+      const creds = await createAdminAuthCredentials(adminPin || settings.adminPin || '1234');
+      const updated: Settings = {
+        ...settings,
+        recoveryCodeHash: creds.recoveryCodeHash,
+        recoveryCodeSalt: creds.recoveryCodeSalt,
+        recoveryCodeCreatedAt: creds.recoveryCodeCreatedAt,
+        recoveryToken: undefined,
+      };
+
+      await saveSettings(updated);
+      setNewlyGeneratedCode(creds.recoveryCode);
+      setCodeConfirmedSaved(false);
+      onRefresh();
+    } catch (err) {
+      console.error('Failed generating new recovery code:', err);
+      setGenError('Failed to generate replacement code.');
+    }
   };
 
-  const handleRegenerateQR = async () => {
-    const newToken = generateNewToken();
-    const updated = { ...settings, recoveryToken: newToken };
-    await saveSettings(updated);
-    onRefresh();
+  const handleCopyNewCode = async () => {
+    try {
+      await navigator.clipboard.writeText(newlyGeneratedCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2500);
+    } catch (e) {
+      console.warn('Clipboard write failed:', e);
+    }
+  };
+
+  const handleDownloadNewCodeDoc = () => {
+    const content = generateRecoveryCodeDocument(
+      newlyGeneratedCode,
+      settings.storeName,
+      settings.ownerName
+    );
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `admin-replacement-recovery-code-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintNewCodeDoc = () => {
+    const printWindow = window.open('', '_blank', 'width=650,height=750');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    const docText = generateRecoveryCodeDocument(
+      newlyGeneratedCode,
+      settings.storeName,
+      settings.ownerName
+    );
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Replacement Admin Recovery Code</title>
+          <style>
+            body { font-family: monospace; padding: 30px; line-height: 1.5; font-size: 13px; color: #000; background: #fff; }
+            pre { white-space: pre-wrap; word-wrap: break-word; }
+          </style>
+        </head>
+        <body>
+          <pre>${docText}</pre>
+          <script>
+            window.onload = function() {
+              setTimeout(function() { window.print(); }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -208,6 +301,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     e.preventDefault();
 
     const doSave = async () => {
+      let pinHash = settings.adminPinHash;
+      let pinSalt = settings.adminPinSalt;
+
+      if (adminPin && adminPin !== settings.adminPin) {
+        pinSalt = generateCryptoSalt(16);
+        pinHash = await hashSecretWithSalt(adminPin, pinSalt);
+      }
+
       const updated: Settings = {
         ...settings,
         storeName,
@@ -227,6 +328,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         currency,
         lowStockThreshold: Number(lowStockThreshold) || 10,
         adminPin,
+        adminPinHash: pinHash,
+        adminPinSalt: pinSalt,
         animatedBackground: animatedBg,
         darkMode: isDarkMode,
         autoLockMinutes: Number(autoLockMinutes) ?? 5,
@@ -361,9 +464,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handlePinSubmit = (e: React.FormEvent) => {
+  const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (enteredPin === settings.adminPin) {
+    const isMatch = await verifyAdminPin(enteredPin, settings);
+    if (isMatch) {
       setPinUnlocked(true);
       setShowPinModal(false);
       setEnteredPin('');
@@ -431,8 +535,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleConfirmImport = async () => {
     if (!pendingBackup) return;
 
-    if (importPin !== settings.adminPin && importPin !== '1234') {
-      setImportError('Incorrect Admin PIN. Please enter your correct PIN to proceed.');
+    const isMatch = await verifyAdminPin(importPin, settings);
+    if (!isMatch) {
+      setImportError('Incorrect Admin PIN. Please enter your valid PIN to proceed.');
       return;
     }
 
@@ -478,8 +583,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       return;
     }
 
-    if (clearPin !== settings.adminPin && clearPin !== '1234') {
-      setClearError('Incorrect Admin PIN. Please enter your valid 4-digit PIN.');
+    const isMatch = await verifyAdminPin(clearPin, settings);
+    if (!isMatch) {
+      setClearError('Incorrect Admin PIN. Please enter your valid Admin PIN.');
       return;
     }
 
@@ -574,61 +680,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               />
             </div>
           </div>
-          {/* Admin PIN Recovery QR */}
-          <div className="mt-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-            <div className="flex items-center gap-3 mb-4">
-              <QrCode className="w-5 h-5 text-blue-600" />
-              <h4 className="font-bold text-slate-900 dark:text-white">Admin Recovery QR</h4>
-            </div>
-            {!settings.recoveryToken ? (
-              <button
-                type="button"
-                onClick={handleRegenerateQR}
-                className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
-              >
-                Generate Recovery QR Code
-              </button>
-            ) : (
-              <div className="space-y-4 flex flex-col items-center">
-                {showQr && (
-                  <QRCodeCanvas value={settings.recoveryToken} size={150} />
-                )}
-                <div className="flex gap-2 w-full">
-                  <button
-                    type="button"
-                    onClick={() => setShowQr(!showQr)}
-                    className="flex-1 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm font-semibold"
-                  >
-                    {showQr ? 'Hide QR' : 'Show QR'}
-                  </button>
-                  {showQr && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const canvas = document.querySelector('canvas');
-                        if (canvas) {
-                          const url = canvas.toDataURL('image/png');
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = 'admin-recovery-qr.png';
-                          a.click();
-                        }
-                      }}
-                      className="flex-1 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
-                    >
-                      Save PNG
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleRegenerateQR}
-                    className="flex-1 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
-                  >
-                    Regenerate
-                  </button>
+          {/* Offline Admin Recovery Code System */}
+          <div className="mt-6 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">Offline Admin PIN Recovery</h4>
+                  <p className="text-xs text-slate-500">
+                    Cryptographically salted recovery keys • 100% Offline
+                  </p>
                 </div>
               </div>
-            )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setGenVerifyPin('');
+                  setGenError(null);
+                  setNewlyGeneratedCode('');
+                  setShowGenerateRecoveryModal(true);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Generate Replacement Code</span>
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Active recovery codes are securely hashed and never displayed during daily use. If you have misplaced your printed or saved Recovery Code, verify your Admin PIN to generate a fresh replacement code.
+            </div>
           </div>
 
 
@@ -1645,6 +1729,152 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Generate Replacement Recovery Code */}
+      {showGenerateRecoveryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-200 select-none">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 relative space-y-4">
+            <button
+              type="button"
+              onClick={() => setShowGenerateRecoveryModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-white p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {!newlyGeneratedCode ? (
+              <form onSubmit={handleGenerateRecoveryCodeSubmit} className="space-y-4 text-left">
+                <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+                  <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Generate Replacement Code</h3>
+                    <p className="text-xs text-slate-500">Verify your Admin PIN to issue a new code</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                  <p className="font-semibold flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    Security Notice:
+                  </p>
+                  <p>
+                    Generating a new code will immediately <strong>invalidate</strong> any previous recovery code.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Enter Current Admin PIN:
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    required
+                    autoFocus
+                    value={genVerifyPin}
+                    onChange={(e) => setGenVerifyPin(e.target.value)}
+                    placeholder="••••"
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-center text-lg tracking-widest font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {genError && (
+                  <div className="p-2.5 rounded-lg bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 text-xs border border-red-200 dark:border-red-900">
+                    {genError}
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowGenerateRecoveryModal(false)}
+                    className="flex-1 rounded-xl bg-slate-100 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-xs font-semibold text-white hover:bg-indigo-700 shadow-sm transition"
+                  >
+                    Generate Replacement
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-4 text-center">
+                <div className="inline-flex p-3 rounded-2xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">New Recovery Code Generated</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Save your new code offline. Your previous code is now inactive.
+                  </p>
+                </div>
+
+                <div className="bg-slate-900 p-4 rounded-xl border border-indigo-500/40 space-y-1.5">
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
+                    Active Recovery Code
+                  </span>
+                  <div className="text-lg font-mono font-black text-amber-300 tracking-wider select-all py-1">
+                    {newlyGeneratedCode}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyNewCode}
+                    className="py-2 px-2 rounded-xl border border-slate-200 dark:border-slate-700 font-semibold text-slate-700 dark:text-slate-300 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {codeCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-blue-600" />}
+                    <span>{codeCopied ? 'Copied!' : 'Copy Code'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadNewCodeDoc}
+                    className="py-2 px-2 rounded-xl border border-slate-200 dark:border-slate-700 font-semibold text-slate-700 dark:text-slate-300 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Download .txt</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintNewCodeDoc}
+                    className="py-2 px-2 rounded-xl border border-slate-200 dark:border-slate-700 font-semibold text-slate-700 dark:text-slate-300 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Print Sheet</span>
+                  </button>
+                </div>
+
+                <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-left cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={codeConfirmedSaved}
+                    onChange={(e) => setCodeConfirmedSaved(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-0 h-4 w-4"
+                  />
+                  <span className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">
+                    I have safely copied, saved, or printed this replacement Recovery Code offline.
+                  </span>
+                </label>
+
+                <button
+                  type="button"
+                  disabled={!codeConfirmedSaved}
+                  onClick={() => setShowGenerateRecoveryModal(false)}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition"
+                >
+                  Done & Close
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

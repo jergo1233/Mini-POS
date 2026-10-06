@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Lock, Unlock, AlertCircle, LogOut } from 'lucide-react';
 import { AuthSession } from './LoginScreen';
 import { Cashier, Settings } from '../db/indexedDB';
+import { verifyAdminPin } from '../utils/cryptoAuth';
 
 interface AutoLockModalProps {
   currentSession: AuthSession;
@@ -21,12 +22,14 @@ export const AutoLockModal: React.FC<AutoLockModalProps> = ({
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const handleAttemptUnlock = (e?: React.FormEvent) => {
+  const handleAttemptUnlock = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError(null);
 
+    const isAdminMatch = await verifyAdminPin(pin, settings);
+
     if (currentSession.role === 'admin') {
-      if (pin === settings.adminPin) {
+      if (isAdminMatch) {
         onUnlock();
       } else {
         setError('Incorrect Admin PIN.');
@@ -35,7 +38,7 @@ export const AutoLockModal: React.FC<AutoLockModalProps> = ({
       const cashier = cashiers.find((c) => c.id === currentSession.id);
       if (cashier && cashier.pin === pin) {
         onUnlock();
-      } else if (pin === settings.adminPin) {
+      } else if (isAdminMatch) {
         // Admin PIN also overrides unlock
         onUnlock();
       } else {
