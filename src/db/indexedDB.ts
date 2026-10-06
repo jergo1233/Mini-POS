@@ -537,6 +537,28 @@ export async function addStockMovement(
   });
 }
 
+export async function saveRawTransaction(transaction: Transaction, dbInstance?: IDBDatabase): Promise<void> {
+  const db = dbInstance || (await openDB());
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('transactions', 'readwrite');
+    const store = tx.objectStore('transactions');
+    const req = store.put(transaction);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function saveRawStockMovement(movement: StockMovement, dbInstance?: IDBDatabase): Promise<void> {
+  const db = dbInstance || (await openDB());
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('stock_movements', 'readwrite');
+    const store = tx.objectStore('stock_movements');
+    const req = store.put(movement);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
 // --- Cashiers ---
 export async function getAllCashiers(dbInstance?: IDBDatabase): Promise<Cashier[]> {
   try {
@@ -653,17 +675,19 @@ export interface PendingSyncPayload {
   products: Product[];
   cashiers: Cashier[];
   categories: Category[];
+  customers: Customer[];
   totalPendingCount: number;
 }
 
 export async function getPendingSyncPayload(): Promise<PendingSyncPayload> {
-  const [allTx, allSm, allReq, allProd, allCash, allCat] = await Promise.all([
+  const [allTx, allSm, allReq, allProd, allCash, allCat, allCust] = await Promise.all([
     getAllTransactions(),
     getAllStockMovements(),
     getAllResetRequests(),
     getAllProducts(),
     getAllCashiers(),
     getAllCategories(),
+    getAllCustomers(),
   ]);
 
   const pendingTx = allTx.filter((t) => t.syncStatus === 'pending');
@@ -677,6 +701,7 @@ export async function getPendingSyncPayload(): Promise<PendingSyncPayload> {
     products: allProd,
     cashiers: allCash,
     categories: allCat,
+    customers: allCust,
     totalPendingCount: pendingTx.length + pendingSm.length + pendingReq.length,
   };
 }

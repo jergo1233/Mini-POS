@@ -8,9 +8,18 @@ import {
   getAllCashiers,
   getAllProducts,
   getAllCategories,
+  getAllTransactions,
+  saveRawTransaction,
+  getAllStockMovements,
+  saveRawStockMovement,
+  getAllCustomers,
+  saveCustomer,
   Cashier,
   Product,
   Category,
+  Transaction,
+  StockMovement,
+  Customer,
   CashierResetRequest,
   saveResetRequest,
   getSettings,
@@ -110,6 +119,7 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
           products: payload.products,
           cashiers: payload.cashiers,
           categories: payload.categories,
+          customers: payload.customers,
           settings: currentSettings,
           clientName,
           clientRole,
@@ -132,12 +142,15 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
         reqIds: payload.resetRequests.map((r) => r.id),
       });
 
-      // Synchronize back any updated server records (cashiers, products, reset requests, settings, notifications)
+      // Synchronize back any updated server records (cashiers, products, categories, transactions, stockMovements, customers, reset requests, settings, notifications)
       if (resData.serverData) {
         const {
           cashiers = [],
           products = [],
           categories = [],
+          transactions = [],
+          stockMovements = [],
+          customers = [],
           resetRequests = [],
           settings: remoteSettings,
           notifications: remoteNotifs = [],
@@ -178,22 +191,50 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
           await saveResetRequest(req);
         }
 
-        // Apply remote products if any were updated by Admin remotely
+        // Apply remote products (including stock/price changes from other terminals)
         const localProds = await getAllProducts();
         const localProdMap = new Map(localProds.map((p) => [p.id, p]));
         for (const remoteProd of products as Product[]) {
           const local = localProdMap.get(remoteProd.id);
-          if (!local || (remoteProd.updatedAt && new Date(remoteProd.updatedAt) > new Date(local.updatedAt))) {
+          if (!local || (remoteProd.updatedAt && new Date(remoteProd.updatedAt) >= new Date(local.updatedAt)) || local.stock !== remoteProd.stock) {
             await saveProduct({ ...remoteProd, syncStatus: 'synced' });
           }
         }
 
-        // Apply remote categories if any
+        // Apply remote categories
         const localCats = await getAllCategories();
         const localCatIds = new Set(localCats.map((c) => c.id));
         for (const remoteCat of categories as Category[]) {
           if (!localCatIds.has(remoteCat.id)) {
             await saveCategory(remoteCat);
+          }
+        }
+
+        // Apply remote transactions (so Admin sees Cashier sales and Cashier sees historical data)
+        const localTxs = await getAllTransactions();
+        const localTxMap = new Map(localTxs.map((t) => [t.id, t]));
+        for (const remoteTx of transactions as Transaction[]) {
+          const local = localTxMap.get(remoteTx.id);
+          if (!local || local.syncStatus !== 'synced') {
+            await saveRawTransaction({ ...remoteTx, syncStatus: 'synced' });
+          }
+        }
+
+        // Apply remote stock movements
+        const localSms = await getAllStockMovements();
+        const localSmMap = new Map(localSms.map((s) => [s.id, s]));
+        for (const remoteSm of stockMovements as StockMovement[]) {
+          if (!localSmMap.has(remoteSm.id)) {
+            await saveRawStockMovement({ ...remoteSm, syncStatus: 'synced' });
+          }
+        }
+
+        // Apply remote customers
+        const localCusts = await getAllCustomers();
+        const localCustMap = new Map(localCusts.map((c) => [c.id, c]));
+        for (const remoteCust of customers as Customer[]) {
+          if (!localCustMap.has(remoteCust.id)) {
+            await saveCustomer(remoteCust);
           }
         }
       }

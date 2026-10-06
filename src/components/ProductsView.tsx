@@ -51,6 +51,8 @@ interface ProductsViewProps {
   categories: Category[];
   settings: Settings;
   onRefresh: () => void;
+  isOnline?: boolean;
+  onTriggerSync?: () => Promise<boolean>;
 }
 
 export const ProductsView: React.FC<ProductsViewProps> = ({
@@ -58,6 +60,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   categories,
   settings,
   onRefresh,
+  isOnline,
+  onTriggerSync,
 }) => {
   const [activeTab, setActiveTab] = useState<'catalog' | 'history'>('catalog');
   const [searchQuery, setSearchQuery] = useState('');
@@ -283,6 +287,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
       await loadHistory();
       onRefresh();
+      if (onTriggerSync) {
+        onTriggerSync().catch(() => {});
+      }
       setRestockProduct(null);
     } catch (err) {
       console.error('Restock error:', err);
@@ -458,6 +465,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
       await loadHistory();
       onRefresh();
+      if (onTriggerSync) {
+        onTriggerSync().catch(() => {});
+      }
 
       if (!editingProduct) {
         // Continuous Add Mode: keep modal open so user can add more products without re-entering PIN
@@ -533,6 +543,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
       await loadHistory();
       onRefresh();
+      if (onTriggerSync) {
+        onTriggerSync().catch(() => {});
+      }
       setProductToDelete(null);
     } catch (err) {
       console.error('Delete error:', err);

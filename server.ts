@@ -28,6 +28,7 @@ interface CentralStore {
   stockMovements: any[];
   cashiers: any[];
   resetRequests: any[];
+  customers?: any[];
   settings?: any;
   notifications?: any[];
 }
@@ -41,6 +42,7 @@ const defaultCentralStore: CentralStore = {
   stockMovements: [],
   cashiers: [],
   resetRequests: [],
+  customers: [],
 };
 
 function readCentralStore(): CentralStore {
@@ -87,6 +89,7 @@ app.post('/api/sync', (req, res) => {
     products = [],
     cashiers = [],
     categories = [],
+    customers = [],
     settings,
     clientName,
     clientRole,
@@ -201,6 +204,18 @@ app.post('/api/sync', (req, res) => {
       }
     });
     current.cashiers = Array.from(cashMap.values());
+  }
+
+  // Merge customers
+  if (Array.isArray(customers) && customers.length > 0) {
+    const custMap = new Map<string, any>();
+    (current.customers || []).forEach((c: any) => custMap.set(c.id, c));
+    customers.forEach((c: any) => {
+      if (c && c.id) {
+        custMap.set(c.id, c);
+      }
+    });
+    current.customers = Array.from(custMap.values());
   }
 
   writeCentralStore(current);

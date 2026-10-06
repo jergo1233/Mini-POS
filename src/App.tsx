@@ -144,7 +144,11 @@ export default function App() {
   }, [notifications, currentSession]);
 
   useEffect(() => {
-    loadData();
+    loadData().then(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        triggerSync().catch(() => {});
+      }
+    });
 
     // Register PWA service worker
     if ('serviceWorker' in navigator) {
@@ -152,7 +156,7 @@ export default function App() {
         console.debug('Service worker registration failed:', err);
       });
     }
-  }, [loadData]);
+  }, [loadData, triggerSync]);
 
   // Inactivity Auto-Lock Timer
   useEffect(() => {
@@ -357,6 +361,8 @@ export default function App() {
               categories={categories}
               settings={settings}
               onRefresh={loadData}
+              isOnline={isOnline}
+              onTriggerSync={triggerSync}
             />
           )}
 
@@ -394,6 +400,8 @@ export default function App() {
             <CustomersView
               customers={customers}
               onRefresh={loadData}
+              isOnline={isOnline}
+              onTriggerSync={triggerSync}
             />
           )}
 

@@ -16,9 +16,16 @@ import { Customer, saveCustomer, deleteCustomer } from '../db/indexedDB';
 interface CustomersViewProps {
   customers: Customer[];
   onRefresh: () => void;
+  isOnline?: boolean;
+  onTriggerSync?: () => Promise<boolean>;
 }
 
-export const CustomersView: React.FC<CustomersViewProps> = ({ customers, onRefresh }) => {
+export const CustomersView: React.FC<CustomersViewProps> = ({
+  customers,
+  onRefresh,
+  isOnline,
+  onTriggerSync,
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState('');
@@ -52,6 +59,9 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ customers, onRefre
       setDescription('');
       setShowModal(false);
       onRefresh();
+      if (onTriggerSync) {
+        onTriggerSync().catch(() => {});
+      }
     } catch (err) {
       console.error('Save customer error:', err);
     }
@@ -62,6 +72,9 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ customers, onRefre
       try {
         await deleteCustomer(id);
         onRefresh();
+        if (onTriggerSync) {
+          onTriggerSync().catch(() => {});
+        }
       } catch (err) {
         console.error('Delete customer error:', err);
       }
