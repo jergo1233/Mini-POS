@@ -47,7 +47,7 @@ export const MoreMenuModal: React.FC<MoreMenuModalProps> = ({
     { id: 'reports', label: 'Business Reports', icon: BarChart3 },
     { id: 'cashiers', label: 'Cashier Accounts & PINs', icon: UserCheck, badge: pendingResetRequestsCount },
     { id: 'customers', label: 'Customers', icon: Users },
-    { id: 'settings', label: 'Settings, Sync & Backup', icon: SettingsIcon },
+    { id: 'settings', label: 'Settings & ZIP Backup', icon: SettingsIcon },
   ];
 
   const cashierItems: MoreMenuItem[] = [

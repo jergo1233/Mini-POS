@@ -64,17 +64,11 @@ import {
 interface SettingsViewProps {
   settings: Settings;
   onRefresh: () => void;
-  isOnline?: boolean;
-  onTriggerSync?: () => Promise<boolean>;
-  pendingCount?: number;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   onRefresh,
-  isOnline = true,
-  onTriggerSync,
-  pendingCount = 0,
 }) => {
   const [storeName, setStoreName] = useState(settings.storeName);
   const [ownerName, setOwnerName] = useState(settings.ownerName || 'Jerome Urbano');
@@ -97,7 +91,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isDarkMode, setIsDarkMode] = useState(settings.darkMode ?? false);
   const [autoLockMinutes, setAutoLockMinutes] = useState(settings.autoLockMinutes ?? 5);
   const [cashierCanViewAllSales, setCashierCanViewAllSales] = useState(settings.cashierCanViewAllSales ?? false);
-  const [syncingNow, setSyncingNow] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [receiptSavedAlert, setReceiptSavedAlert] = useState<{
     show: boolean;
@@ -343,9 +336,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3000);
         onRefresh();
-        if (onTriggerSync) {
-          onTriggerSync().catch((err) => console.warn('Failed auto-sync on settings save:', err));
-        }
       } catch (err) {
         console.error('Save settings error:', err);
         alert('Failed to save settings.');
@@ -913,34 +903,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
-            {/* Cloud Sync Status Box */}
-            <div className="p-4 rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            {/* Offline Local Storage & Data Privacy Banner */}
+            <div className="p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/30 flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 shrink-0">
+                <HardDrive className="w-5 h-5" />
+              </div>
               <div className="space-y-0.5">
-                <span className="font-bold text-xs text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
-                  <RefreshCw className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  Automatic Cloud Synchronization & Remote Hub
+                <span className="font-bold text-xs text-emerald-950 dark:text-emerald-200 block">
+                  100% Offline Local Storage & Zero Cloud Dependency
                 </span>
                 <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Status: {isOnline ? '🟢 Connected (Online)' : '🔴 Offline Mode'} • Pending queue:{' '}
-                  <strong>{pendingCount} records</strong>
+                  Your store records and POS data stay strictly on this device. Use the <strong>ZIP Backup & Products Transfer</strong> tools below to transfer data safely.
                 </p>
               </div>
-
-              {onTriggerSync && (
-                <button
-                  type="button"
-                  disabled={!isOnline || syncingNow}
-                  onClick={async () => {
-                    setSyncingNow(true);
-                    await onTriggerSync();
-                    setSyncingNow(false);
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${syncingNow ? 'animate-spin' : ''}`} />
-                  <span>{syncingNow ? 'Syncing...' : 'Sync Now'}</span>
-                </button>
-              )}
             </div>
           </div>
 

@@ -65,7 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'reports' as TabType, label: 'Reports', icon: BarChart3, roles: ['admin'] },
     { id: 'cashiers' as TabType, label: 'Cashier Access', icon: UserCheck, roles: ['admin'], badge: pendingResetRequestsCount },
     { id: 'customers' as TabType, label: 'Customers', icon: Users, roles: ['admin', 'cashier'] },
-    { id: 'settings' as TabType, label: 'Settings & Sync', icon: SettingsIcon, roles: ['admin'] },
+    { id: 'settings' as TabType, label: 'Settings & Backup', icon: SettingsIcon, roles: ['admin'] },
   ];
 
   const visibleNavItems = allNavItems.filter((item) =>

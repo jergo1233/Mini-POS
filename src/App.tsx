@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   seedInitialData,
   getAllProducts,
@@ -23,7 +23,6 @@ import {
 } from './db/indexedDB';
 import { Sidebar, TabType } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
-import { RefreshCw, X } from 'lucide-react';
 import { MoreMenuModal } from './components/MoreMenuModal';
 import { Dashboard } from './components/Dashboard';
 import { POSView } from './components/POSView';
@@ -38,26 +37,37 @@ import { AnimatedBackground } from './components/AnimatedBackground';
 import { LoginScreen, AuthSession } from './components/LoginScreen';
 import { AutoLockModal } from './components/AutoLockModal';
 import { SyncStatusHeader } from './components/SyncStatusHeader';
-import { useSyncManager } from './hooks/useSyncManager';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
   const [showMoreModal, setShowMoreModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Authentication & Session State (Persisted in sessionStorage)
+  // Authentication & Session State (Persisted in both sessionStorage & localStorage)
   const [currentSession, setCurrentSession] = useState<AuthSession | null>(() => {
     try {
-      const saved = sessionStorage.getItem('pos_active_session');
+      const saved = sessionStorage.getItem('pos_active_session') || localStorage.getItem('pos_active_session');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
     }
   });
 
-  // Terminal Lock state (Persisted in sessionStorage)
-  const [isLocked, setIsLocked] = useState(() => {
-    return sessionStorage.getItem('pos_terminal_locked') === 'true';
+  // Terminal Lock state — persistent for Cashiers across page refreshes
+  const [isLocked, setIsLocked] = useState<boolean>(() => {
+    try {
+      const sessionStr = sessionStorage.getItem('pos_active_session') || localStorage.getItem('pos_active_session');
+      if (sessionStr) {
+        const parsed = JSON.parse(sessionStr);
+        if (parsed && parsed.role === 'cashier') {
+          const lockedVal = sessionStorage.getItem('pos_terminal_locked') || localStorage.getItem('pos_terminal_locked');
+          return lockedVal === 'true';
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
   });
 
   // App data state
@@ -96,75 +106,19 @@ export default function App() {
     }
   }, []);
 
-  // Synchronization manager hook
-  const {
-    isOnline,
-    syncState,
-    pendingCount,
-    triggerSync,
-    refreshPendingCount,
-    notifications,
-  } = useSyncManager(loadData);
-
-  // Sync Success notification alert state for Admin
-  const [activeToast, setActiveToast] = useState<{ id: string; title: string; message: string; timestamp: string } | null>(null);
-  
-  // Track last processed notification ID to avoid double-toasting
-  const lastProcessedNotifIdRef = useRef<string | null>(
-    typeof localStorage !== 'undefined' ? localStorage.getItem('pos_last_processed_notif_id') : null
-  );
-
-  // Listen for new sync notifications for Admin
   useEffect(() => {
-    if (currentSession?.role !== 'admin' || !notifications || notifications.length === 0) return;
+    loadData();
 
-    const latestNotif = notifications[notifications.length - 1];
-    
-    if (latestNotif && latestNotif.id !== lastProcessedNotifIdRef.current) {
-      const notifTime = new Date(latestNotif.timestamp).getTime();
-      const now = Date.now();
-      // Only alert if the timestamp is recent (within 5 minutes) to avoid stale historical alerts
-      if (now - notifTime < 5 * 60 * 1000) {
-        setActiveToast({
-          id: latestNotif.id,
-          title: 'Cashier Sync Successful',
-          message: latestNotif.message,
-          timestamp: latestNotif.timestamp,
-        });
-
-        // Auto close after 8 seconds
-        const timer = setTimeout(() => {
-          setActiveToast(null);
-        }, 8000);
-      }
-      
-      lastProcessedNotifIdRef.current = latestNotif.id;
-      try {
-        localStorage.setItem('pos_last_processed_notif_id', latestNotif.id);
-      } catch (e) {
-        // ignore
-      }
-    }
-  }, [notifications, currentSession]);
-
-  useEffect(() => {
-    loadData().then(() => {
-      if (typeof navigator !== 'undefined' && navigator.onLine) {
-        triggerSync().catch(() => {});
-      }
-    });
-
-    // Register PWA service worker
+    // Register PWA service worker for offline caching
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch((err) => {
         console.debug('Service worker registration failed:', err);
       });
     }
-  }, [loadData, triggerSync]);
+  }, [loadData]);
 
-  // Inactivity Auto-Lock Timer
+  // Inactivity Auto-Lock Timer — STRICTLY active for Cashier role
   useEffect(() => {
-    // Only lock terminal for Cashier role as per user requirement
     if (!currentSession || currentSession.role !== 'cashier' || isLocked) return;
 
     const timeoutMinutes = settings.autoLockMinutes ?? 5;
@@ -175,7 +129,12 @@ export default function App() {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         setIsLocked(true);
-        sessionStorage.setItem('pos_terminal_locked', 'true');
+        try {
+          sessionStorage.setItem('pos_terminal_locked', 'true');
+          localStorage.setItem('pos_terminal_locked', 'true');
+        } catch (e) {
+          // ignore
+        }
       }, timeoutMinutes * 60 * 1000);
     };
 
@@ -194,9 +153,11 @@ export default function App() {
     setIsLocked(false);
     try {
       sessionStorage.setItem('pos_active_session', JSON.stringify(session));
+      localStorage.setItem('pos_active_session', JSON.stringify(session));
       sessionStorage.removeItem('pos_terminal_locked');
+      localStorage.removeItem('pos_terminal_locked');
     } catch (e) {
-      console.debug('sessionStorage warning:', e);
+      console.debug('Storage warning:', e);
     }
 
     // Role-based initial tab
@@ -212,23 +173,35 @@ export default function App() {
     setIsLocked(false);
     try {
       sessionStorage.removeItem('pos_active_session');
+      localStorage.removeItem('pos_active_session');
       sessionStorage.removeItem('pos_terminal_locked');
+      localStorage.removeItem('pos_terminal_locked');
     } catch (e) {
       // ignore
     }
   };
 
   const handleManualLock = () => {
-    // Allow manual lock only if user is a cashier
+    // Only lock terminal for Cashier role
     if (currentSession?.role === 'cashier') {
       setIsLocked(true);
-      sessionStorage.setItem('pos_terminal_locked', 'true');
+      try {
+        sessionStorage.setItem('pos_terminal_locked', 'true');
+        localStorage.setItem('pos_terminal_locked', 'true');
+      } catch (e) {
+        // ignore
+      }
     }
   };
 
   const handleUnlock = () => {
     setIsLocked(false);
-    sessionStorage.removeItem('pos_terminal_locked');
+    try {
+      sessionStorage.removeItem('pos_terminal_locked');
+      localStorage.removeItem('pos_terminal_locked');
+    } catch (e) {
+      // ignore
+    }
   };
 
   // Enforce role-based tab restrictions
@@ -260,8 +233,7 @@ export default function App() {
       <LoginScreen
         settings={settings}
         onLoginSuccess={handleLoginSuccess}
-        isOnline={isOnline}
-        onTriggerSync={triggerSync}
+        isOnline={true}
       />
     );
   }
@@ -280,8 +252,8 @@ export default function App() {
         darkMode={settings.darkMode}
       />
 
-      {/* Inactivity Auto-Lock Overlay */}
-      {isLocked && (
+      {/* Inactivity & Manual Terminal Lock Overlay for Cashier */}
+      {isLocked && currentSession.role === 'cashier' && (
         <AutoLockModal
           currentSession={currentSession}
           cashiers={cashiers}
@@ -326,13 +298,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* Sync Status & User Session Header */}
+          {/* User Session & Offline Status Header */}
           <SyncStatusHeader
-            isOnline={isOnline}
-            syncState={syncState}
-            pendingCount={pendingCount}
             currentSession={currentSession}
-            onManualSync={triggerSync}
             onLock={handleManualLock}
             onLogout={handleLogout}
           />
@@ -359,11 +327,9 @@ export default function App() {
               customers={customers}
               onTransactionComplete={() => {
                 loadData();
-                refreshPendingCount();
-                if (isOnline) triggerSync().catch(() => {});
               }}
               activeCashierName={currentSession.name}
-              isOnline={isOnline}
+              isOnline={true}
               onRefreshCustomers={loadData}
             />
           )}
@@ -374,8 +340,7 @@ export default function App() {
               categories={categories}
               settings={settings}
               onRefresh={loadData}
-              isOnline={isOnline}
-              onTriggerSync={triggerSync}
+              isOnline={true}
             />
           )}
 
@@ -387,8 +352,7 @@ export default function App() {
               onRefresh={loadData}
               userRole={currentSession.role}
               userName={currentSession.name}
-              isOnline={isOnline}
-              onTriggerSync={triggerSync}
+              isOnline={true}
             />
           )}
 
@@ -413,8 +377,7 @@ export default function App() {
             <CustomersView
               customers={customers}
               onRefresh={loadData}
-              isOnline={isOnline}
-              onTriggerSync={triggerSync}
+              isOnline={true}
             />
           )}
 
@@ -423,8 +386,7 @@ export default function App() {
               cashiers={cashiers}
               resetRequests={resetRequests}
               onRefresh={loadData}
-              isOnline={isOnline}
-              onTriggerSync={triggerSync}
+              isOnline={true}
             />
           )}
 
@@ -432,9 +394,6 @@ export default function App() {
             <SettingsView
               settings={settings}
               onRefresh={loadData}
-              isOnline={isOnline}
-              onTriggerSync={triggerSync}
-              pendingCount={pendingCount}
             />
           )}
         </div>
@@ -460,35 +419,6 @@ export default function App() {
           onLock={handleManualLock}
           onLogout={handleLogout}
         />
-      )}
-
-      {/* Sync Success Toast Alert for Admin */}
-      {activeToast && (
-        <div className="fixed bottom-20 md:bottom-6 right-6 z-50 max-w-sm w-full bg-slate-900/95 border border-emerald-500/30 text-white rounded-2xl p-4 shadow-2xl animate-in slide-in-from-bottom duration-300">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0">
-              <RefreshCw className="w-5 h-5 animate-spin" />
-            </div>
-            <div className="flex-1 min-w-0 space-y-0.5">
-              <h4 className="font-bold text-xs md:text-sm text-emerald-400 flex items-center gap-1.5">
-                <span>{activeToast.title}</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {activeToast.message}
-              </p>
-              <span className="text-[9px] text-slate-500 block">
-                {new Date(activeToast.timestamp).toLocaleTimeString()}
-              </span>
-            </div>
-            <button
-              onClick={() => setActiveToast(null)}
-              className="text-slate-400 hover:text-white transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );
