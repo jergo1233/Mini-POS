@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import {
   Settings,
+  getSettings,
   saveSettings,
   getAllProducts,
   getAllCategories,
@@ -600,15 +601,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setClearing(true);
       setClearError(null);
 
-      // Perform clean clear of all IndexedDB tables without blocking deleteDatabase
-      await clearAllData(false);
+      // Preserve all current authentication credentials and store settings
+      const currentSettings = await getSettings();
 
-      // Reset settings to default with PIN 1234
+      // Clear all business records (products, transactions, categories, customers, cashiers, movements) while PRESERVING settings
+      await clearAllData(true);
+
+      // Re-save preserved settings ensuring Admin PIN and recovery keys remain 100% active
       await saveSettings({
-        ...DEFAULT_SETTINGS,
-        adminPin: '1234',
-        storeName: settings.storeName || DEFAULT_SETTINGS.storeName,
-        currency: settings.currency || DEFAULT_SETTINGS.currency,
+        ...currentSettings,
+        isSetup: true,
       });
 
       // Clear localStorage cache for backup date
@@ -621,7 +623,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       await loadStats();
       onRefresh();
 
-      alert('SUCCESS: All products, categories, transactions, and customers have been completely deleted from your database.');
+      alert('SUCCESS: All products, categories, sales records, and customers have been cleared from your database. Your Admin PIN and security settings have been preserved.');
       setShowClearWarningModal(false);
       window.location.reload();
     } catch (err) {
@@ -1574,7 +1576,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   ⚠️ Before clearing your database, please ensure you make a backup first!
                 </p>
                 <p className="text-[11px] leading-relaxed opacity-90">
-                  Clearing the database will permanently delete all your products, sales receipts, customer records, and inventory data from IndexedDB. If you do not have a JSON backup file, your products cannot be recovered.
+                  Clearing the database will delete your products, sales records, customer records, and inventory history from IndexedDB. Your <strong>Admin PIN, store profile, and security settings will be safely preserved</strong> so you can continue logging in.
                 </p>
               </div>
 

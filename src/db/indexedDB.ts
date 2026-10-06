@@ -269,7 +269,7 @@ export function openDB(): Promise<IDBDatabase> {
   });
 }
 
-// Seed initial data if empty
+// Seed initial data if brand new database
 export async function seedInitialData(): Promise<void> {
   const db = await openDB();
 
@@ -279,34 +279,37 @@ export async function seedInitialData(): Promise<void> {
     await saveSettings(DEFAULT_SETTINGS, db);
   }
 
-  // Check categories
-  const categories = await getAllCategories(db);
-  if (categories.length === 0) {
-    for (const cat of DEFAULT_CATEGORIES) {
-      await saveCategory(cat, db);
+  // Only seed sample products and cashiers on brand-new initial install before setup
+  if (!settings || !settings.isSetup) {
+    // Check categories
+    const categories = await getAllCategories(db);
+    if (categories.length === 0) {
+      for (const cat of DEFAULT_CATEGORIES) {
+        await saveCategory(cat, db);
+      }
     }
-  }
 
-  // Check cashiers
-  const cashiers = await getAllCashiers(db);
-  if (cashiers.length === 0) {
-    for (const c of DEFAULT_CASHIERS) {
-      await saveCashier(c, db);
+    // Check cashiers
+    const cashiers = await getAllCashiers(db);
+    if (cashiers.length === 0) {
+      for (const c of DEFAULT_CASHIERS) {
+        await saveCashier(c, db);
+      }
     }
-  }
 
-  // Check products
-  const products = await getAllProducts(db);
-  if (products.length === 0) {
-    const now = new Date().toISOString();
-    for (const p of DEFAULT_PRODUCTS) {
-      const fullProd: Product = {
-        ...p,
-        createdAt: now,
-        updatedAt: now,
-        syncStatus: 'synced',
-      };
-      await saveProduct(fullProd, db);
+    // Check products
+    const products = await getAllProducts(db);
+    if (products.length === 0) {
+      const now = new Date().toISOString();
+      for (const p of DEFAULT_PRODUCTS) {
+        const fullProd: Product = {
+          ...p,
+          createdAt: now,
+          updatedAt: now,
+          syncStatus: 'synced',
+        };
+        await saveProduct(fullProd, db);
+      }
     }
   }
 }
