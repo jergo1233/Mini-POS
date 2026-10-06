@@ -29,6 +29,7 @@ interface CentralStore {
   cashiers: any[];
   resetRequests: any[];
   settings?: any;
+  notifications?: any[];
 }
 
 const defaultCentralStore: CentralStore = {
@@ -96,9 +97,37 @@ app.post('/api/sync', (req, res) => {
     products = [],
     cashiers = [],
     categories = [],
+    settings,
+    clientName,
+    clientRole,
   } = req.body;
 
   const current = readCentralStore();
+
+  // Create real-time cashier sync notification for the admin
+  if (clientRole === 'cashier') {
+    const notifMessage = `Cashier "${clientName || 'Cashier'}" has successfully synchronized their terminal database (${transactions.length} sales, ${stockMovements.length} stock movements synced).`;
+    const newNotif = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      clientName: clientName || 'Cashier',
+      clientRole: 'cashier',
+      message: notifMessage,
+      timestamp: new Date().toISOString(),
+    };
+    if (!current.notifications) {
+      current.notifications = [];
+    }
+    current.notifications.push(newNotif);
+    // Limit notifications array size to last 30 logs
+    if (current.notifications.length > 30) {
+      current.notifications.shift();
+    }
+  }
+
+  // Merge settings
+  if (settings) {
+    current.settings = { ...(current.settings || {}), ...settings };
+  }
 
   // Merge transactions by unique ID
   const txMap = new Map<string, any>();

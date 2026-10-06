@@ -13,6 +13,8 @@ import {
   Category,
   CashierResetRequest,
   saveResetRequest,
+  getSettings,
+  saveSettings,
 } from '../db/indexedDB';
 
 export type SyncState = 'synced' | 'pending' | 'syncing' | 'failed';
@@ -25,6 +27,7 @@ export interface SyncManagerReturn {
   syncError: string | null;
   triggerSync: () => Promise<boolean>;
   refreshPendingCount: () => Promise<void>;
+  notifications: any[];
 }
 
 export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
@@ -41,6 +44,14 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
     }
   });
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('pos_notifications');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const isSyncingRef = useRef<boolean>(false);
 
   const refreshPendingCount = useCallback(async () => {
@@ -70,6 +81,21 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
 
     try {
       const payload = await getPendingSyncPayload();
+      const currentSettings = await getSettings();
+
+      // Detect active user name and role from sessionStorage
+      let clientName = 'Admin';
+      let clientRole = 'admin';
+      try {
+        const sessionStr = sessionStorage.getItem('pos_active_session');
+        if (sessionStr) {
+          const session = JSON.parse(sessionStr);
+          clientName = session.name || 'Store Admin';
+          clientRole = session.role || 'admin';
+        }
+      } catch (e) {
+        // ignore
+      }
 
       // Send to server /api/sync
       const response = await fetch('/api/sync', {
@@ -84,6 +110,9 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
           products: payload.products,
           cashiers: payload.cashiers,
           categories: payload.categories,
+          settings: currentSettings,
+          clientName,
+          clientRole,
         }),
       });
 
@@ -103,14 +132,36 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
         reqIds: payload.resetRequests.map((r) => r.id),
       });
 
-      // Synchronize back any updated server records (cashiers, products, reset requests)
+      // Synchronize back any updated server records (cashiers, products, reset requests, settings, notifications)
       if (resData.serverData) {
         const {
           cashiers = [],
           products = [],
           categories = [],
           resetRequests = [],
+          settings: remoteSettings,
+          notifications: remoteNotifs = [],
         } = resData.serverData;
+
+        // Apply remote settings if updated (such as Admin PIN modified remotely)
+        if (remoteSettings) {
+          const updatedSettings = {
+            ...currentSettings,
+            ...remoteSettings,
+            isSetup: true,
+          };
+          await saveSettings(updatedSettings);
+        }
+
+        // Apply remote notifications if any
+        if (remoteNotifs && remoteNotifs.length > 0) {
+          setNotifications(remoteNotifs);
+          try {
+            localStorage.setItem('pos_notifications', JSON.stringify(remoteNotifs));
+          } catch (e) {
+            // ignore
+          }
+        }
 
         // Apply updated cashiers (e.g. Admin reset PIN or created new cashier remotely)
         const localCashiers = await getAllCashiers();
@@ -216,5 +267,6 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
     syncError,
     triggerSync,
     refreshPendingCount,
+    notifications,
   };
 }

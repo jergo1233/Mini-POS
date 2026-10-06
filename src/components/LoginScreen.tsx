@@ -16,7 +16,8 @@ import {
   PhoneCall,
   QrCode,
   Download,
-  Printer
+  Printer,
+  Cloud,
 } from 'lucide-react';
 import {
   Cashier,
@@ -24,7 +25,8 @@ import {
   getAllCashiers,
   saveResetRequest,
   CashierResetRequest,
-  saveSettings
+  saveSettings,
+  openDB,
 } from '../db/indexedDB';
 import { QRScannerModal } from './QRScannerModal';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -76,6 +78,116 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [setupOwnerName, setSetupOwnerName] = useState(settings.ownerName || 'Jerome Urbano');
   const [generatedToken, setGeneratedToken] = useState('');
   const [setupStep, setSetupStep] = useState<'form' | 'qr'>('form');
+  const [isConnectingCloud, setIsConnectingCloud] = useState(false);
+
+  const handleLoadFromCloud = async () => {
+    setIsConnectingCloud(true);
+    setErrorMsg(null);
+    try {
+      const response = await fetch('/api/sync/state');
+      if (!response.ok) {
+        throw new Error(`Failed to contact server: ${response.statusText}`);
+      }
+      const result = await response.json();
+      if (!result.success || !result.data) {
+        throw new Error(result.message || 'Invalid server response');
+      }
+
+      const storeData = result.data;
+      const db = await openDB();
+
+      // Clear existing local collections so we can do a clean remote import
+      const txClear = db.transaction([
+        'products',
+        'categories',
+        'cashiers',
+        'reset_requests',
+        'settings'
+      ], 'readwrite');
+      txClear.objectStore('products').clear();
+      txClear.objectStore('categories').clear();
+      txClear.objectStore('cashiers').clear();
+      txClear.objectStore('reset_requests').clear();
+      txClear.objectStore('settings').clear();
+
+      await new Promise<void>((resolve, reject) => {
+        txClear.oncomplete = () => resolve();
+        txClear.onerror = () => reject(txClear.error);
+      });
+
+      // 1. Save Settings
+      let remoteSettings = storeData.settings || {};
+      if (!remoteSettings.adminPin) {
+        remoteSettings.adminPin = '1234'; // Safe fallback
+      }
+      const finalSettings: Settings = {
+        ...settings,
+        ...remoteSettings,
+        isSetup: true, // Mark setup as completed
+      };
+      await saveSettings(finalSettings);
+
+      // 2. Save Cashiers
+      if (storeData.cashiers && storeData.cashiers.length > 0) {
+        const txCashier = db.transaction('cashiers', 'readwrite');
+        const cashierStore = txCashier.objectStore('cashiers');
+        for (const cashier of storeData.cashiers) {
+          cashierStore.put(cashier);
+        }
+        await new Promise<void>((resolve, reject) => {
+          txCashier.oncomplete = () => resolve();
+          txCashier.onerror = () => reject(txCashier.error);
+        });
+      }
+
+      // 3. Save Products
+      if (storeData.products && storeData.products.length > 0) {
+        const txProd = db.transaction('products', 'readwrite');
+        const prodStore = txProd.objectStore('products');
+        for (const prod of storeData.products) {
+          prodStore.put(prod);
+        }
+        await new Promise<void>((resolve, reject) => {
+          txProd.oncomplete = () => resolve();
+          txProd.onerror = () => reject(txProd.error);
+        });
+      }
+
+      // 4. Save Categories
+      if (storeData.categories && storeData.categories.length > 0) {
+        const txCat = db.transaction('categories', 'readwrite');
+        const catStore = txCat.objectStore('categories');
+        for (const cat of storeData.categories) {
+          catStore.put(cat);
+        }
+        await new Promise<void>((resolve, reject) => {
+          txCat.oncomplete = () => resolve();
+          txCat.onerror = () => reject(txCat.error);
+        });
+      }
+
+      // 5. Save Reset Requests
+      if (storeData.resetRequests && storeData.resetRequests.length > 0) {
+        const txReq = db.transaction('reset_requests', 'readwrite');
+        const reqStore = txReq.objectStore('reset_requests');
+        for (const req of storeData.resetRequests) {
+          reqStore.put(req);
+        }
+        await new Promise<void>((resolve, reject) => {
+          txReq.oncomplete = () => resolve();
+          txReq.onerror = () => reject(txReq.error);
+        });
+      }
+
+      alert('Cloud connection successful! Your store data has been retrieved. You can now login using your existing PIN.');
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Cloud load failed:', err);
+      setErrorMsg(err.message || 'Connection failed. Please check your internet connection.');
+    } finally {
+      setIsConnectingCloud(false);
+    }
+  };
 
   const loadCashiers = async () => {
     try {
@@ -349,6 +461,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               >
                 <span>Generate Recovery QR & Setup</span>
                 <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <div className="relative flex py-1 items-center shrink-0">
+                <div className="flex-grow border-t border-slate-700/60"></div>
+                <span className="flex-shrink mx-3 text-slate-500 text-[10px] font-semibold tracking-wider uppercase">Or Sync Existing Cloud Store</span>
+                <div className="flex-grow border-t border-slate-700/60"></div>
+              </div>
+
+              <button
+                type="button"
+                disabled={isConnectingCloud}
+                onClick={handleLoadFromCloud}
+                className="w-full py-2.5 px-4 rounded-xl border border-slate-700 hover:bg-slate-800 font-bold text-slate-300 text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Cloud className={`w-4 h-4 text-sky-400 ${isConnectingCloud ? 'animate-pulse' : ''}`} />
+                <span>{isConnectingCloud ? 'Connecting to Cloud...' : 'Retrieve Existing Store from Cloud'}</span>
               </button>
             </form>
           ) : (

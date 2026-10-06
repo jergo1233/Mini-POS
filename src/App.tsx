@@ -23,6 +23,7 @@ import {
 } from './db/indexedDB';
 import { Sidebar, TabType } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
+import { RefreshCw, X } from 'lucide-react';
 import { MoreMenuModal } from './components/MoreMenuModal';
 import { Dashboard } from './components/Dashboard';
 import { POSView } from './components/POSView';
@@ -98,7 +99,49 @@ export default function App() {
     pendingCount,
     triggerSync,
     refreshPendingCount,
+    notifications,
   } = useSyncManager(loadData);
+
+  // Sync Success notification alert state for Admin
+  const [activeToast, setActiveToast] = useState<{ id: string; title: string; message: string; timestamp: string } | null>(null);
+  
+  // Track last processed notification ID to avoid double-toasting
+  const lastProcessedNotifIdRef = useRef<string | null>(
+    typeof localStorage !== 'undefined' ? localStorage.getItem('pos_last_processed_notif_id') : null
+  );
+
+  // Listen for new sync notifications for Admin
+  useEffect(() => {
+    if (currentSession?.role !== 'admin' || !notifications || notifications.length === 0) return;
+
+    const latestNotif = notifications[notifications.length - 1];
+    
+    if (latestNotif && latestNotif.id !== lastProcessedNotifIdRef.current) {
+      const notifTime = new Date(latestNotif.timestamp).getTime();
+      const now = Date.now();
+      // Only alert if the timestamp is recent (within 5 minutes) to avoid stale historical alerts
+      if (now - notifTime < 5 * 60 * 1000) {
+        setActiveToast({
+          id: latestNotif.id,
+          title: 'Cashier Sync Successful',
+          message: latestNotif.message,
+          timestamp: latestNotif.timestamp,
+        });
+
+        // Auto close after 8 seconds
+        const timer = setTimeout(() => {
+          setActiveToast(null);
+        }, 8000);
+      }
+      
+      lastProcessedNotifIdRef.current = latestNotif.id;
+      try {
+        localStorage.setItem('pos_last_processed_notif_id', latestNotif.id);
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [notifications, currentSession]);
 
   useEffect(() => {
     loadData();
@@ -396,6 +439,35 @@ export default function App() {
           onLock={handleManualLock}
           onLogout={handleLogout}
         />
+      )}
+
+      {/* Sync Success Toast Alert for Admin */}
+      {activeToast && (
+        <div className="fixed bottom-20 md:bottom-6 right-6 z-50 max-w-sm w-full bg-slate-900/95 border border-emerald-500/30 text-white rounded-2xl p-4 shadow-2xl animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 shrink-0">
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            </div>
+            <div className="flex-1 min-w-0 space-y-0.5">
+              <h4 className="font-bold text-xs md:text-sm text-emerald-400 flex items-center gap-1.5">
+                <span>{activeToast.title}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              </h4>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {activeToast.message}
+              </p>
+              <span className="text-[9px] text-slate-500 block">
+                {new Date(activeToast.timestamp).toLocaleTimeString()}
+              </span>
+            </div>
+            <button
+              onClick={() => setActiveToast(null)}
+              className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
