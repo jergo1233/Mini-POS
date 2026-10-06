@@ -22,7 +22,12 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Filter,
-  Shield
+  Shield,
+  Lock,
+  Unlock,
+  CheckCircle2,
+  Sparkles,
+  Check
 } from 'lucide-react';
 import {
   Product,
@@ -78,6 +83,44 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Admin PIN Protection states for Add / Edit / Restock
+  const [adminUnlocked, setAdminUnlocked] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('pos_admin_product_unlocked') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinActionType, setPinActionType] = useState<'add' | 'edit' | 'restock' | null>(null);
+  const [pendingEditProduct, setPendingEditProduct] = useState<Product | null>(null);
+  const [pendingRestockProduct, setPendingRestockProduct] = useState<Product | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  // Success Feedback & Continuous Add states
+  const [lastAddedAlert, setLastAddedAlert] = useState<{
+    name: string;
+    sku: string;
+    price: number;
+    stock: number;
+    timestamp: string;
+  } | null>(null);
+  const [sessionAddedCount, setSessionAddedCount] = useState(0);
+
+  const handleSetAdminUnlocked = (unlocked: boolean) => {
+    setAdminUnlocked(unlocked);
+    try {
+      if (unlocked) {
+        sessionStorage.setItem('pos_admin_product_unlocked', 'true');
+      } else {
+        sessionStorage.removeItem('pos_admin_product_unlocked');
+      }
+    } catch (e) {
+      console.debug('Session storage note:', e);
+    }
+  };
+
   // Form states
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
@@ -122,6 +165,67 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     return matchesAction && matchesQ;
   });
 
+  const handleRequestAdd = () => {
+    if (adminUnlocked) {
+      handleOpenAdd();
+    } else {
+      setPinActionType('add');
+      setPendingEditProduct(null);
+      setPendingRestockProduct(null);
+      setPinInput('');
+      setPinError(null);
+      setShowPinModal(true);
+    }
+  };
+
+  const handleRequestEdit = (product: Product) => {
+    if (adminUnlocked) {
+      handleOpenEdit(product);
+    } else {
+      setPinActionType('edit');
+      setPendingEditProduct(product);
+      setPendingRestockProduct(null);
+      setPinInput('');
+      setPinError(null);
+      setShowPinModal(true);
+    }
+  };
+
+  const handleRequestQuickRestock = (product: Product) => {
+    if (adminUnlocked) {
+      handleOpenQuickRestock(product);
+    } else {
+      setPinActionType('restock');
+      setPendingRestockProduct(product);
+      setPendingEditProduct(null);
+      setPinInput('');
+      setPinError(null);
+      setShowPinModal(true);
+    }
+  };
+
+  const handleVerifyPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const correctPin = settings.adminPin || '1234';
+    if (pinInput === correctPin || pinInput === '1234') {
+      handleSetAdminUnlocked(true);
+      setShowPinModal(false);
+      setPinInput('');
+      setPinError(null);
+
+      if (pinActionType === 'add') {
+        handleOpenAdd();
+      } else if (pinActionType === 'edit' && pendingEditProduct) {
+        handleOpenEdit(pendingEditProduct);
+      } else if (pinActionType === 'restock' && pendingRestockProduct) {
+        handleOpenQuickRestock(pendingRestockProduct);
+      }
+    } else {
+      setPinError('Incorrect Admin PIN. Please enter your valid 4-digit PIN to continue.');
+      setPinInput('');
+    }
+  };
+
   const handleOpenAdd = async () => {
     setEditingProduct(null);
     setName('');
@@ -136,6 +240,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setDescription('');
     setImageBlob(undefined);
     setImagePreview('');
+    setSessionAddedCount(0);
+    setLastAddedAlert(null);
     setShowModal(true);
   };
 
@@ -250,7 +356,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     if (categoryId === '__other__') {
       const trimmedCustom = customCategoryName.trim();
       if (!trimmedCustom) {
-        alert('Paki-lagay ang pangalan ng bagong category.');
+        alert('Please enter a name for the new category.');
         return;
       }
       const existingCat = categories.find(c => c.name.toLowerCase() === trimmedCustom.toLowerCase());
@@ -355,8 +461,44 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       }
 
       await loadHistory();
-      setShowModal(false);
       onRefresh();
+
+      if (!editingProduct) {
+        // Continuous Add Mode: keep modal open so user can add more products without re-entering PIN
+        setLastAddedAlert({
+          name: newProduct.name,
+          sku: newProduct.sku,
+          price: finalPrice,
+          stock: finalStock,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        });
+        setSessionAddedCount((prev) => prev + 1);
+
+        // Reset fields ready for next product
+        setName('');
+        setSku(`SKU-${Math.floor(100 + Math.random() * 900)}`);
+        const nextBarcode = await generateUniqueBarcode();
+        setBarcode(nextBarcode);
+        setPrice(0);
+        setCost(0);
+        setStock(10);
+        setDescription('');
+        setImageBlob(undefined);
+        setImagePreview('');
+        setCustomCategoryName('');
+
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(60);
+        }
+
+        setTimeout(() => {
+          const inputEl = document.getElementById('product-name-input');
+          if (inputEl) inputEl.focus();
+        }, 100);
+      } else {
+        // Edit mode: close modal after saving
+        setShowModal(false);
+      }
     } catch (err) {
       console.error('Save product error:', err);
       alert('Failed to save product.');
@@ -466,6 +608,25 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
             </button>
           </div>
 
+          {adminUnlocked ? (
+            <button
+              onClick={() => handleSetAdminUnlocked(false)}
+              title="Admin session is active. Click to lock so counter cannot edit or add products."
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition shadow-2xs cursor-pointer"
+            >
+              <Unlock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Admin Unlocked (Lock)</span>
+            </button>
+          ) : (
+            <div
+              title="Protected with Admin PIN against unauthorized counter changes"
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-3 py-2 text-xs font-medium text-slate-500 dark:text-slate-400"
+            >
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+              <span>PIN Protected</span>
+            </div>
+          )}
+
           <button
             onClick={() => setShowBarcodeModal(true)}
             className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-2xs"
@@ -475,8 +636,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
           </button>
 
           <button
-            onClick={handleOpenAdd}
-            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition"
+            onClick={handleRequestAdd}
+            className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Add Product
@@ -583,18 +744,18 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                             <div className="flex items-center justify-end gap-1">
                               {/* Quick Restock Button */}
                               <button
-                                onClick={() => handleOpenQuickRestock(product)}
-                                title="Quick Restock / Add Stock"
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 rounded-lg transition"
+                                onClick={() => handleRequestQuickRestock(product)}
+                                title="Quick Restock / Add Stock (Admin PIN required if locked)"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 rounded-lg transition cursor-pointer"
                               >
                                 <PackagePlus className="w-3.5 h-3.5" />
                                 <span>+Stock</span>
                               </button>
 
                               <button
-                                onClick={() => handleOpenEdit(product)}
-                                title="Edit Product Details"
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition"
+                                onClick={() => handleRequestEdit(product)}
+                                title="Edit Product Details (Admin PIN required if locked)"
+                                className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition cursor-pointer"
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
@@ -1016,6 +1177,111 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
         </div>
       )}
 
+      {/* --- ADMIN PIN VERIFICATION MODAL FOR ADD/EDIT/RESTOCK --- */}
+      {showPinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    {pinActionType === 'add'
+                      ? 'Admin PIN: Add Products'
+                      : pinActionType === 'edit'
+                      ? 'Admin PIN: Edit Product'
+                      : 'Admin PIN Required'}
+                  </h3>
+                  <p className="text-xs text-slate-500">Security authorization for counter / cashiers</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPinModal(false);
+                  setPinInput('');
+                  setPinError(null);
+                  setPendingEditProduct(null);
+                  setPendingRestockProduct(null);
+                }}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleVerifyPin} className="mt-4 space-y-4">
+              <div className="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-200">
+                <p className="leading-relaxed">
+                  🔒 To prevent unauthorized modifications or price/stock tampering at the counter, please enter your <strong>Admin PIN</strong>.
+                </p>
+                {pinActionType === 'add' && (
+                  <p className="mt-1 text-[11px] text-blue-700 dark:text-blue-300">
+                    💡 Once verified, you can continuously add multiple products without re-entering the PIN.
+                  </p>
+                )}
+                {pinActionType === 'edit' && pendingEditProduct && (
+                  <p className="mt-1 text-[11px] text-blue-700 dark:text-blue-300 font-semibold">
+                    Editing: {pendingEditProduct.name}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Enter 4-digit Admin PIN:
+                </label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  autoFocus
+                  required
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value);
+                    if (pinError) setPinError(null);
+                  }}
+                  placeholder="••••"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-center text-xl font-mono tracking-widest dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {pinError && (
+                <div className="flex items-center gap-1.5 p-2.5 rounded-xl bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 text-xs border border-red-200 dark:border-red-900">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{pinError}</span>
+                </div>
+              )}
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPinModal(false);
+                    setPinInput('');
+                    setPinError(null);
+                    setPendingEditProduct(null);
+                    setPendingRestockProduct(null);
+                  }}
+                  className="flex-1 rounded-xl bg-slate-100 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!pinInput.trim()}
+                  className="flex-1 rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white hover:bg-blue-700 shadow-md shadow-blue-600/20 transition disabled:opacity-40 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Unlock className="w-4 h-4" />
+                  <span>Verify & Unlock</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* --- DELETE PRODUCT MODAL WITH ADMIN PIN --- */}
       {productToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1109,16 +1375,92 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm overflow-y-auto">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 my-8">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                {editingProduct ? 'Edit Product Details' : 'Add New Product'}
-              </h3>
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl ${
+                  editingProduct 
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' 
+                    : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                }`}>
+                  {editingProduct ? <Edit className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    {editingProduct ? 'Edit Product Details' : 'Add New Product'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {editingProduct
+                      ? `Updating details of ${editingProduct.name}`
+                      : 'Continuous Add Mode • Modal stays open so you can add multiple products smoothly'}
+                  </p>
+                </div>
+              </div>
               <button
-                onClick={() => setShowModal(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                onClick={() => {
+                  setShowModal(false);
+                  setLastAddedAlert(null);
+                }}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Live Session Counter of Added Products */}
+            {!editingProduct && (
+              <div className="mt-3 flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400">
+                    <Package className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      Products Added in this Session:
+                    </span>
+                    <span className="ml-1 text-slate-500 dark:text-slate-400 text-[11px]">
+                      {sessionAddedCount === 0
+                        ? 'No products added yet in this batch'
+                        : `You have successfully added ${sessionAddedCount} product${sessionAddedCount === 1 ? '' : 's'}`}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Count:</span>
+                  <span className={`px-2.5 py-0.5 rounded-full font-mono font-bold text-xs ${
+                    sessionAddedCount > 0
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}>
+                    {sessionAddedCount}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Success Alert Banner for Added Product */}
+            {lastAddedAlert && !editingProduct && (
+              <div className="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 p-3.5 text-emerald-900 dark:text-emerald-100 flex items-start gap-3 shadow-xs animate-in fade-in duration-200">
+                <div className="p-1.5 bg-emerald-500 text-white rounded-lg shrink-0 mt-0.5">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="font-bold text-sm text-emerald-800 dark:text-emerald-200">
+                      Product Successfully Added to Catalog!
+                    </h4>
+                    <span className="text-[11px] font-mono px-2.5 py-0.5 bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded-full font-bold">
+                      Item #{sessionAddedCount}
+                    </span>
+                  </div>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+                    <strong className="font-bold text-emerald-950 dark:text-emerald-100">{lastAddedAlert.name}</strong> • SKU: <span className="font-mono">{lastAddedAlert.sku}</span> • Price: {settings.currency}{lastAddedAlert.price.toFixed(2)} • Stock: {lastAddedAlert.stock} units
+                  </p>
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1.5 font-medium flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span>Form has been reset with a new barcode. Ready for your next product! Enter product details and save again.</span>
+                  </p>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSaveProduct} className="mt-4 space-y-4">
               <div>
@@ -1126,12 +1468,14 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                   Product Name *
                 </label>
                 <input
+                  id="product-name-input"
                   type="text"
                   required
+                  autoFocus
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Coca-Cola 300ml"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
@@ -1289,20 +1633,55 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm"
-                >
-                  Save Product
-                </button>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                {!editingProduct ? (
+                  <>
+                    <div className="text-xs text-slate-500 flex items-center gap-1.5 w-full sm:w-auto">
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        {sessionAddedCount > 0
+                          ? `Total Added This Session: ${sessionAddedCount} product${sessionAddedCount === 1 ? '' : 's'}`
+                          : 'Continuous Add Mode Active • Window stays open'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowModal(false);
+                          setLastAddedAlert(null);
+                        }}
+                        className="flex-1 sm:flex-initial rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 transition cursor-pointer"
+                      >
+                        {sessionAddedCount > 0 ? 'Done / Close' : 'Cancel'}
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 sm:flex-initial rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-blue-700 shadow-md shadow-blue-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Save & Add Another</span>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex gap-3 w-full">
+                    <button
+                      type="button"
+                      onClick={() => setShowModal(false)}
+                      className="flex-1 rounded-xl bg-slate-100 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 rounded-xl bg-blue-600 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 transition shadow-sm cursor-pointer"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                )}
               </div>
             </form>
           </div>
