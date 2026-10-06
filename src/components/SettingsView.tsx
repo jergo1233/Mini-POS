@@ -238,6 +238,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3000);
         onRefresh();
+        if (onTriggerSync) {
+          onTriggerSync().catch((err) => console.warn('Failed auto-sync on settings save:', err));
+        }
       } catch (err) {
         console.error('Save settings error:', err);
         alert('Failed to save settings.');
