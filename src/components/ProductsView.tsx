@@ -133,6 +133,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [description, setDescription] = useState('');
   const [imageBlob, setImageBlob] = useState<Blob | string | undefined>(undefined);
   const [imagePreview, setImagePreview] = useState<string>('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const loadHistory = async () => {
     try {
@@ -166,42 +167,15 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   });
 
   const handleRequestAdd = () => {
-    if (adminUnlocked) {
-      handleOpenAdd();
-    } else {
-      setPinActionType('add');
-      setPendingEditProduct(null);
-      setPendingRestockProduct(null);
-      setPinInput('');
-      setPinError(null);
-      setShowPinModal(true);
-    }
+    handleOpenAdd();
   };
 
   const handleRequestEdit = (product: Product) => {
-    if (adminUnlocked) {
-      handleOpenEdit(product);
-    } else {
-      setPinActionType('edit');
-      setPendingEditProduct(product);
-      setPendingRestockProduct(null);
-      setPinInput('');
-      setPinError(null);
-      setShowPinModal(true);
-    }
+    handleOpenEdit(product);
   };
 
   const handleRequestQuickRestock = (product: Product) => {
-    if (adminUnlocked) {
-      handleOpenQuickRestock(product);
-    } else {
-      setPinActionType('restock');
-      setPendingRestockProduct(product);
-      setPendingEditProduct(null);
-      setPinInput('');
-      setPinError(null);
-      setShowPinModal(true);
-    }
+    handleOpenQuickRestock(product);
   };
 
   const handleVerifyPin = (e: React.FormEvent) => {
@@ -228,6 +202,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
   const handleOpenAdd = async () => {
     setEditingProduct(null);
+    setFormError(null);
     setName('');
     setSku(`SKU-${Math.floor(100 + Math.random() * 900)}`);
     const newCode = await generateUniqueBarcode();
@@ -247,6 +222,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
   const handleOpenEdit = (product: Product) => {
     setEditingProduct(product);
+    setFormError(null);
     setName(product.name);
     setSku(product.sku);
     setBarcode(product.barcode);
@@ -331,19 +307,39 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      alert('Product name is required.');
+    setFormError(null);
+
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setFormError('Product name is required.');
+      document.getElementById('product-name-input')?.focus();
       return;
     }
-    if (!barcode.trim()) {
-      alert('Barcode is required.');
+
+    // Check duplicate product name (case-insensitive & trimmed to avoid duplicates)
+    const duplicateProduct = products.find(
+      p => p.id !== editingProduct?.id && p.name.trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (duplicateProduct) {
+      setFormError(
+        `Product name "${trimmedName}" already exists (SKU: ${duplicateProduct.sku}, Barcode: ${duplicateProduct.barcode}). Please use a unique product name to avoid duplicates.`
+      );
+      document.getElementById('product-name-input')?.focus();
+      return;
+    }
+
+    const trimmedBarcode = barcode.trim();
+    if (!trimmedBarcode) {
+      setFormError('Barcode is required.');
       return;
     }
 
     // Check duplicate barcode
-    const existing = products.find(p => p.barcode === barcode && p.id !== editingProduct?.id);
+    const existing = products.find(
+      p => p.id !== editingProduct?.id && p.barcode.trim().toLowerCase() === trimmedBarcode.toLowerCase()
+    );
     if (existing) {
-      alert('Barcode is already assigned to another product.');
+      setFormError(`Barcode "${trimmedBarcode}" is already assigned to "${existing.name}". Barcodes must be unique.`);
       return;
     }
 
@@ -356,7 +352,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     if (categoryId === '__other__') {
       const trimmedCustom = customCategoryName.trim();
       if (!trimmedCustom) {
-        alert('Please enter a name for the new category.');
+        setFormError('Please enter a name for the new category.');
         return;
       }
       const existingCat = categories.find(c => c.name.toLowerCase() === trimmedCustom.toLowerCase());
@@ -515,11 +511,6 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const handleConfirmDelete = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!productToDelete) return;
-
-    if (deleteAdminPin !== settings.adminPin && deleteAdminPin !== '1234') {
-      setDeleteError('Incorrect Admin PIN. Please enter your valid 4-digit PIN.');
-      return;
-    }
 
     try {
       setDeleting(true);
@@ -1324,45 +1315,22 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 </span>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Enter Admin PIN to Confirm:
-                </label>
-                <input
-                  type="password"
-                  maxLength={6}
-                  autoFocus
-                  required
-                  value={deleteAdminPin}
-                  onChange={(e) => setDeleteAdminPin(e.target.value)}
-                  placeholder="••••"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-center text-sm font-mono tracking-widest dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {deleteError && (
-                <div className="flex items-center gap-1.5 p-2 rounded-lg bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 text-xs border border-red-200 dark:border-red-900">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>{deleteError}</span>
-                </div>
-              )}
-
               <div className="flex gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => setProductToDelete(null)}
                   disabled={deleting}
-                  className="flex-1 rounded-xl bg-slate-100 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 transition"
+                  className="flex-1 rounded-xl bg-slate-100 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 transition cursor-pointer"
                 >
-                  Cancel
+                  No, Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={deleting || !deleteAdminPin}
-                  className="flex-1 rounded-xl bg-red-600 py-2.5 text-xs font-semibold text-white hover:bg-red-700 shadow-md shadow-red-600/20 transition disabled:opacity-40 flex items-center justify-center gap-1.5 cursor-pointer"
+                  disabled={deleting}
+                  className="flex-1 rounded-xl bg-red-600 py-2.5 text-xs font-semibold text-white hover:bg-red-700 shadow-md shadow-red-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
-                  {deleting ? 'Deleting...' : 'Confirm & Delete'}
+                  {deleting ? 'Deleting...' : 'Yes, Delete'}
                 </button>
               </div>
             </form>
@@ -1384,9 +1352,16 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                   {editingProduct ? <Edit className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    {editingProduct ? 'Edit Product Details' : 'Add New Product'}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      {editingProduct ? 'Edit Product Details' : 'Add New Product'}
+                    </h3>
+                    {!editingProduct && sessionAddedCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold font-mono border border-emerald-200 dark:border-emerald-800">
+                        {sessionAddedCount} Added
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500">
                     {editingProduct
                       ? `Updating details of ${editingProduct.name}`
@@ -1405,78 +1380,100 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               </button>
             </div>
 
-            {/* Live Session Counter of Added Products */}
-            {!editingProduct && (
-              <div className="mt-3 flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400">
-                    <Package className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      Products Added in this Session:
-                    </span>
-                    <span className="ml-1 text-slate-500 dark:text-slate-400 text-[11px]">
-                      {sessionAddedCount === 0
-                        ? 'No products added yet in this batch'
-                        : `You have successfully added ${sessionAddedCount} product${sessionAddedCount === 1 ? '' : 's'}`}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Count:</span>
-                  <span className={`px-2.5 py-0.5 rounded-full font-mono font-bold text-xs ${
-                    sessionAddedCount > 0
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-                  }`}>
-                    {sessionAddedCount}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Success Alert Banner for Added Product */}
+            {/* Unified & Beautiful Success Alert Indicator Once Product is Added */}
             {lastAddedAlert && !editingProduct && (
-              <div className="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 p-3.5 text-emerald-900 dark:text-emerald-100 flex items-start gap-3 shadow-xs animate-in fade-in duration-200">
-                <div className="p-1.5 bg-emerald-500 text-white rounded-lg shrink-0 mt-0.5">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="font-bold text-sm text-emerald-800 dark:text-emerald-200">
-                      Product Successfully Added to Catalog!
-                    </h4>
-                    <span className="text-[11px] font-mono px-2.5 py-0.5 bg-emerald-200 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded-full font-bold">
-                      Item #{sessionAddedCount}
-                    </span>
+              <div className="mt-4 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700/80 p-3.5 text-emerald-950 dark:text-emerald-100 shadow-xs animate-in fade-in duration-200">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-emerald-600 text-white rounded-xl shrink-0 shadow-xs mt-0.5">
+                    <CheckCircle2 className="w-5 h-5" />
                   </div>
-                  <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
-                    <strong className="font-bold text-emerald-950 dark:text-emerald-100">{lastAddedAlert.name}</strong> • SKU: <span className="font-mono">{lastAddedAlert.sku}</span> • Price: {settings.currency}{lastAddedAlert.price.toFixed(2)} • Stock: {lastAddedAlert.stock} units
-                  </p>
-                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1.5 font-medium flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <span>Form has been reset with a new barcode. Ready for your next product! Enter product details and save again.</span>
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-sm text-emerald-800 dark:text-emerald-200">
+                          Product Saved Successfully!
+                        </span>
+                        <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs">
+                          Item #{sessionAddedCount}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setLastAddedAlert(null)}
+                        title="Dismiss alert"
+                        className="rounded-lg p-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-200/50 dark:hover:bg-emerald-900/50 transition cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Summary row of the added product */}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="font-bold text-slate-900 dark:text-white bg-white dark:bg-slate-800 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800/80">
+                        {lastAddedAlert.name}
+                      </span>
+                      <span className="font-mono text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                        {lastAddedAlert.sku}
+                      </span>
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-900/40 px-2 py-0.5 rounded-md">
+                        {settings.currency}{lastAddedAlert.price.toFixed(2)}
+                      </span>
+                      <span className="text-slate-600 dark:text-slate-300 text-[11px]">
+                        • Initial Stock: <strong>{lastAddedAlert.stock}</strong> units
+                      </span>
+                    </div>
+
+                    <div className="mt-2 text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 font-medium">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>Ready for next product! Form reset with a new barcode. You can continue typing.</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
             <form onSubmit={handleSaveProduct} className="mt-4 space-y-4">
+              {/* Form Error Banner */}
+              {formError && (
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 text-xs border border-red-200 dark:border-red-900 animate-in fade-in duration-200">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+                  <span className="font-medium leading-relaxed">{formError}</span>
+                </div>
+              )}
+
               <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Product Name *
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Product Name *
+                  </label>
+                  {name.trim() && products.some(p => p.id !== editingProduct?.id && p.name.trim().toLowerCase() === name.trim().toLowerCase()) && (
+                    <span className="text-[11px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" /> Duplicate Name
+                    </span>
+                  )}
+                </div>
                 <input
                   id="product-name-input"
                   type="text"
                   required
                   autoFocus
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (formError) setFormError(null);
+                  }}
                   placeholder="e.g. Coca-Cola 300ml"
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`w-full rounded-xl border px-3.5 py-2 text-sm dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 ${
+                    name.trim() && products.some(p => p.id !== editingProduct?.id && p.name.trim().toLowerCase() === name.trim().toLowerCase())
+                      ? 'border-red-500 focus:ring-red-400 bg-red-50/20 dark:bg-red-950/20'
+                      : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500'
+                  }`}
                 />
+                {name.trim() && products.some(p => p.id !== editingProduct?.id && p.name.trim().toLowerCase() === name.trim().toLowerCase()) && (
+                  <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 font-medium flex items-center gap-1">
+                    <span>⚠️ A product named "{name.trim()}" already exists in the catalog (case-insensitive duplicate prevented).</span>
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1509,10 +1506,22 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     type="text"
                     required
                     value={barcode}
-                    onChange={(e) => setBarcode(e.target.value)}
+                    onChange={(e) => {
+                      setBarcode(e.target.value);
+                      if (formError) setFormError(null);
+                    }}
                     placeholder="e.g. 200001000001"
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className={`w-full rounded-xl border px-3.5 py-2 text-sm font-mono dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 ${
+                      barcode.trim() && products.some(p => p.id !== editingProduct?.id && p.barcode.trim().toLowerCase() === barcode.trim().toLowerCase())
+                        ? 'border-red-500 focus:ring-red-400 bg-red-50/20 dark:bg-red-950/20'
+                        : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500'
+                    }`}
                   />
+                  {barcode.trim() && products.some(p => p.id !== editingProduct?.id && p.barcode.trim().toLowerCase() === barcode.trim().toLowerCase()) && (
+                    <p className="mt-1 text-[11px] text-red-600 dark:text-red-400 font-medium">
+                      ⚠️ Barcode is already assigned to another item.
+                    </p>
+                  )}
                 </div>
               </div>
 

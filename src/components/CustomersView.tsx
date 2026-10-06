@@ -24,10 +24,11 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ customers, onRefre
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
   const [address, setAddress] = useState('');
+  const [description, setDescription] = useState('');
 
   const filteredCustomers = customers.filter(c => {
     const q = searchQuery.toLowerCase();
-    return c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.address.toLowerCase().includes(q);
+    return c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.address.toLowerCase().includes(q) || (c.description && c.description.toLowerCase().includes(q));
   });
 
   const handleSaveCustomer = async (e: React.FormEvent) => {
@@ -39,6 +40,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ customers, onRefre
       name: name.trim(),
       contact: contact.trim(),
       address: address.trim(),
+      description: description.trim(),
       createdAt: new Date().toISOString(),
     };
 
@@ -47,6 +49,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ customers, onRefre
       setName('');
       setContact('');
       setAddress('');
+      setDescription('');
       setShowModal(false);
       onRefresh();
     } catch (err) {
@@ -121,6 +124,11 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ customers, onRefre
                     <MapPin className="w-3.5 h-3.5 text-slate-400" />
                     <span className="truncate">{cust.address || 'No address provided'}</span>
                   </div>
+                  {cust.description && (
+                    <div className="text-slate-500 dark:text-slate-400 italic text-[11px] pt-1">
+                      "{cust.description}"
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400">
@@ -185,6 +193,19 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ customers, onRefre
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="Street, City, Province..."
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Description / Notes (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Optional notes or description..."
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>

@@ -237,6 +237,15 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
     }
   }, [onScan, playBeep, triggerHaptic]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
   // Check available cameras
   useEffect(() => {
     if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {

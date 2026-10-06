@@ -1,0 +1,220 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  getPendingSyncPayload,
+  markPendingDataAsSynced,
+  saveCashier,
+  saveProduct,
+  saveCategory,
+  getAllCashiers,
+  getAllProducts,
+  getAllCategories,
+  Cashier,
+  Product,
+  Category,
+  CashierResetRequest,
+  saveResetRequest,
+} from '../db/indexedDB';
+
+export type SyncState = 'synced' | 'pending' | 'syncing' | 'failed';
+
+export interface SyncManagerReturn {
+  isOnline: boolean;
+  syncState: SyncState;
+  pendingCount: number;
+  lastSyncTime: string | null;
+  syncError: string | null;
+  triggerSync: () => Promise<boolean>;
+  refreshPendingCount: () => Promise<void>;
+}
+
+export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [syncState, setSyncState] = useState<SyncState>('synced');
+  const [pendingCount, setPendingCount] = useState<number>(0);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('pos_last_sync_time');
+    } catch {
+      return null;
+    }
+  });
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const isSyncingRef = useRef<boolean>(false);
+
+  const refreshPendingCount = useCallback(async () => {
+    try {
+      const payload = await getPendingSyncPayload();
+      setPendingCount(payload.totalPendingCount);
+      if (payload.totalPendingCount > 0 && syncState !== 'syncing' && syncState !== 'failed') {
+        setSyncState('pending');
+      } else if (payload.totalPendingCount === 0 && syncState !== 'syncing') {
+        setSyncState('synced');
+      }
+    } catch (err) {
+      console.debug('Failed to count pending sync items:', err);
+    }
+  }, [syncState]);
+
+  const triggerSync = useCallback(async (): Promise<boolean> => {
+    if (isSyncingRef.current) return false;
+    if (!navigator.onLine) {
+      setSyncState('pending');
+      return false;
+    }
+
+    isSyncingRef.current = true;
+    setSyncState('syncing');
+    setSyncError(null);
+
+    try {
+      const payload = await getPendingSyncPayload();
+
+      // Send to server /api/sync
+      const response = await fetch('/api/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transactions: payload.transactions,
+          stockMovements: payload.stockMovements,
+          resetRequests: payload.resetRequests,
+          products: payload.products,
+          cashiers: payload.cashiers,
+          categories: payload.categories,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync server responded with ${response.status}`);
+      }
+
+      const resData = await response.json();
+      if (!resData.success) {
+        throw new Error(resData.message || 'Sync failed on server');
+      }
+
+      // Mark locally sent items as synced
+      await markPendingDataAsSynced({
+        txIds: payload.transactions.map((t) => t.id),
+        smIds: payload.stockMovements.map((s) => s.id),
+        reqIds: payload.resetRequests.map((r) => r.id),
+      });
+
+      // Synchronize back any updated server records (cashiers, products, reset requests)
+      if (resData.serverData) {
+        const {
+          cashiers = [],
+          products = [],
+          categories = [],
+          resetRequests = [],
+        } = resData.serverData;
+
+        // Apply updated cashiers (e.g. Admin reset PIN or created new cashier remotely)
+        const localCashiers = await getAllCashiers();
+        const localCashierMap = new Map(localCashiers.map((c) => [c.id, c]));
+        for (const remoteCashier of cashiers as Cashier[]) {
+          const local = localCashierMap.get(remoteCashier.id);
+          if (!local || (remoteCashier.updatedAt && new Date(remoteCashier.updatedAt) > new Date(local.updatedAt))) {
+            await saveCashier(remoteCashier);
+          }
+        }
+
+        // Apply updated reset requests
+        for (const req of resetRequests as CashierResetRequest[]) {
+          await saveResetRequest(req);
+        }
+
+        // Apply remote products if any were updated by Admin remotely
+        const localProds = await getAllProducts();
+        const localProdMap = new Map(localProds.map((p) => [p.id, p]));
+        for (const remoteProd of products as Product[]) {
+          const local = localProdMap.get(remoteProd.id);
+          if (!local || (remoteProd.updatedAt && new Date(remoteProd.updatedAt) > new Date(local.updatedAt))) {
+            await saveProduct({ ...remoteProd, syncStatus: 'synced' });
+          }
+        }
+
+        // Apply remote categories if any
+        const localCats = await getAllCategories();
+        const localCatIds = new Set(localCats.map((c) => c.id));
+        for (const remoteCat of categories as Category[]) {
+          if (!localCatIds.has(remoteCat.id)) {
+            await saveCategory(remoteCat);
+          }
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      setLastSyncTime(nowIso);
+      try {
+        localStorage.setItem('pos_last_sync_time', nowIso);
+      } catch (e) {
+        // ignore
+      }
+
+      setSyncState('synced');
+      setPendingCount(0);
+
+      if (onDataUpdated) {
+        onDataUpdated();
+      }
+
+      return true;
+    } catch (err: any) {
+      console.warn('Sync failed:', err);
+      setSyncState('failed');
+      setSyncError(err?.message || 'Sync connection failed');
+      return false;
+    } finally {
+      isSyncingRef.current = false;
+    }
+  }, [onDataUpdated]);
+
+  // Online / Offline event listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // Auto sync when connection returns
+      triggerSync();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSyncState((prev) => (prev === 'syncing' ? 'failed' : prev));
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial check
+    refreshPendingCount();
+
+    // Auto sync interval if online (every 25 seconds)
+    const interval = setInterval(() => {
+      if (navigator.onLine) {
+        triggerSync();
+      } else {
+        refreshPendingCount();
+      }
+    }, 25000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
+  }, [triggerSync, refreshPendingCount]);
+
+  return {
+    isOnline,
+    syncState,
+    pendingCount,
+    lastSyncTime,
+    syncError,
+    triggerSync,
+    refreshPendingCount,
+  };
+}

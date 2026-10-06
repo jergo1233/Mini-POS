@@ -3,6 +3,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { QRCodeCanvas } from 'qrcode.react';
 import {
   Settings as SettingsIcon,
   Store,
@@ -28,7 +29,8 @@ import {
   Printer,
   ShoppingBag,
   Check,
-  X
+  X,
+  QrCode
 } from 'lucide-react';
 import {
   Settings,
@@ -49,9 +51,18 @@ import {
 interface SettingsViewProps {
   settings: Settings;
   onRefresh: () => void;
+  isOnline?: boolean;
+  onTriggerSync?: () => Promise<boolean>;
+  pendingCount?: number;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  settings,
+  onRefresh,
+  isOnline = true,
+  onTriggerSync,
+  pendingCount = 0,
+}) => {
   const [storeName, setStoreName] = useState(settings.storeName);
   const [ownerName, setOwnerName] = useState(settings.ownerName || 'Jerome Urbano');
   const [storeAddress, setStoreAddress] = useState(settings.storeAddress);
@@ -71,12 +82,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
   const [adminPin, setAdminPin] = useState(settings.adminPin);
   const [animatedBg, setAnimatedBg] = useState(settings.animatedBackground !== false);
   const [isDarkMode, setIsDarkMode] = useState(settings.darkMode ?? false);
+  const [autoLockMinutes, setAutoLockMinutes] = useState(settings.autoLockMinutes ?? 5);
+  const [cashierCanViewAllSales, setCashierCanViewAllSales] = useState(settings.cashierCanViewAllSales ?? false);
+  const [syncingNow, setSyncingNow] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [receiptSavedAlert, setReceiptSavedAlert] = useState<{
     show: boolean;
     message: string;
     details: string;
   } | null>(null);
+  const [showQr, setShowQr] = useState(false);
+
+  // Helper to generate secure token
+  const generateNewToken = () => {
+    return Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+  };
+
+  const handleRegenerateQR = async () => {
+    const newToken = generateNewToken();
+    const updated = { ...settings, recoveryToken: newToken };
+    await saveSettings(updated);
+    onRefresh();
+  };
+
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Backup & Data Safety states
@@ -201,6 +229,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
         adminPin,
         animatedBackground: animatedBg,
         darkMode: isDarkMode,
+        autoLockMinutes: Number(autoLockMinutes) ?? 5,
+        cashierCanViewAllSales,
       };
 
       try {
@@ -382,7 +412,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
         }
 
         setPendingBackup(validation.backup);
-        setImportMode('replace');
+        setImportMode('merge');
         setImportPin('');
         setShowImportModal(true);
       } catch (err) {
@@ -541,6 +571,63 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
               />
             </div>
           </div>
+          {/* Admin PIN Recovery QR */}
+          <div className="mt-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3 mb-4">
+              <QrCode className="w-5 h-5 text-blue-600" />
+              <h4 className="font-bold text-slate-900 dark:text-white">Admin Recovery QR</h4>
+            </div>
+            {!settings.recoveryToken ? (
+              <button
+                type="button"
+                onClick={handleRegenerateQR}
+                className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              >
+                Generate Recovery QR Code
+              </button>
+            ) : (
+              <div className="space-y-4 flex flex-col items-center">
+                {showQr && (
+                  <QRCodeCanvas value={settings.recoveryToken} size={150} />
+                )}
+                <div className="flex gap-2 w-full">
+                  <button
+                    type="button"
+                    onClick={() => setShowQr(!showQr)}
+                    className="flex-1 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm font-semibold"
+                  >
+                    {showQr ? 'Hide QR' : 'Show QR'}
+                  </button>
+                  {showQr && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const canvas = document.querySelector('canvas');
+                        if (canvas) {
+                          const url = canvas.toDataURL('image/png');
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'admin-recovery-qr.png';
+                          a.click();
+                        }
+                      }}
+                      className="flex-1 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+                    >
+                      Save PNG
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRegenerateQR}
+                    className="flex-1 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -670,6 +757,86 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onRefresh 
                   <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
                 </label>
               </div>
+            </div>
+          </div>
+
+          {/* Security, Inactivity Auto-Lock & Sync Controls */}
+          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+              Security, Inactivity Lock & Access Permissions
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  POS Auto-Lock After Inactivity
+                </label>
+                <select
+                  value={autoLockMinutes}
+                  onChange={(e) => setAutoLockMinutes(Number(e.target.value))}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value={1}>1 Minute of Inactivity</option>
+                  <option value={2}>2 Minutes of Inactivity</option>
+                  <option value={5}>5 Minutes (Recommended)</option>
+                  <option value={10}>10 Minutes of Inactivity</option>
+                  <option value={15}>15 Minutes of Inactivity</option>
+                  <option value={30}>30 Minutes of Inactivity</option>
+                  <option value={0}>Disabled (Never Auto-Lock)</option>
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Locks terminal automatically when unattended to protect sales and stock data.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Cashier Sales Visibility
+                </label>
+                <div className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40">
+                  <span className="text-xs text-slate-700 dark:text-slate-300">
+                    {cashierCanViewAllSales ? 'Can view all store transactions' : 'Restricted to own shift sales only'}
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cashierCanViewAllSales}
+                      onChange={(e) => setCashierCanViewAllSales(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Cloud Sync Status Box */}
+            <div className="p-4 rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <span className="font-bold text-xs text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  Automatic Cloud Synchronization & Remote Hub
+                </span>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Status: {isOnline ? '🟢 Connected (Online)' : '🔴 Offline Mode'} • Pending queue:{' '}
+                  <strong>{pendingCount} records</strong>
+                </p>
+              </div>
+
+              {onTriggerSync && (
+                <button
+                  type="button"
+                  disabled={!isOnline || syncingNow}
+                  onClick={async () => {
+                    setSyncingNow(true);
+                    await onTriggerSync();
+                    setSyncingNow(false);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncingNow ? 'animate-spin' : ''}`} />
+                  <span>{syncingNow ? 'Syncing...' : 'Sync Now'}</span>
+                </button>
+              )}
             </div>
           </div>
 

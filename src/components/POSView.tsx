@@ -16,24 +16,36 @@ import {
   ArrowRight,
   ArrowLeft,
   Package,
-  Sparkles
+  Sparkles,
+  Users,
+  X,
+  Printer
 } from 'lucide-react';
-import { Product, Category, CartItem, Settings, Transaction, TransactionItem, saveTransaction } from '../db/indexedDB';
+import { Product, Category, CartItem, Settings, Transaction, TransactionItem, saveTransaction, Customer, saveCustomer } from '../db/indexedDB';
 import { CameraScannerModal } from './CameraScannerModal';
 import { ReceiptModal } from './ReceiptModal';
+import { BarcodeModal } from './BarcodeModal';
 
 interface POSViewProps {
   products: Product[];
   categories: Category[];
   settings: Settings;
+  customers?: Customer[];
   onTransactionComplete: () => void;
+  activeCashierName?: string;
+  isOnline?: boolean;
+  onRefreshCustomers?: () => void;
 }
 
 export const POSView: React.FC<POSViewProps> = ({
   products,
   categories,
   settings,
+  customers = [],
   onTransactionComplete,
+  activeCashierName,
+  isOnline = true,
+  onRefreshCustomers,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
@@ -41,9 +53,18 @@ export const POSView: React.FC<POSViewProps> = ({
   const [discount, setDiscount] = useState<number>(0);
   const [payment, setPayment] = useState<number>(0);
   const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [completedTransaction, setCompletedTransaction] = useState<Transaction | null>(null);
   const [mobileTab, setMobileTab] = useState<'catalog' | 'cart'>('catalog');
   const [viewLayout, setViewLayout] = useState<'grid' | 'list'>('grid');
+
+  // Customer selection & Add Customer Modal state
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [custName, setCustName] = useState('');
+  const [custContact, setCustContact] = useState('');
+  const [custAddress, setCustAddress] = useState('');
+  const [custDescription, setCustDescription] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // USB Barcode Scanner listener (keyboard input accumulation)
@@ -221,9 +242,10 @@ export const POSView: React.FC<POSViewProps> = ({
       subtotal: item.product.price * item.quantity,
     }));
 
+    const selectedCust = customers.find(c => c.id === selectedCustomerId);
     const receiptNo = `REC-${Date.now().toString().slice(-6)}`;
     const newTx: Transaction = {
-      id: `tx-${Date.now()}`,
+      id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       receiptNo,
       date: new Date().toISOString(),
       items: txItems,
@@ -232,6 +254,10 @@ export const POSView: React.FC<POSViewProps> = ({
       total,
       payment,
       change,
+      customerId: selectedCust?.id,
+      customerName: selectedCust?.name || 'Walk-in Customer',
+      cashier: activeCashierName || 'Cashier',
+      syncStatus: isOnline ? 'synced' : 'pending',
     };
 
     try {
@@ -328,6 +354,17 @@ export const POSView: React.FC<POSViewProps> = ({
               >
                 <Camera className="w-4 h-4" />
                 <span>Scan Camera</span>
+              </button>
+
+              {/* Print Barcodes Button */}
+              <button
+                type="button"
+                onClick={() => setShowBarcodeModal(true)}
+                className="flex items-center justify-center gap-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 px-3.5 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition shrink-0"
+                title="Print Barcodes"
+              >
+                <Printer className="w-4 h-4 text-blue-600" />
+                <span className="hidden sm:inline">Print Barcodes</span>
               </button>
 
               {/* Grid vs List Layout Toggle */}
@@ -625,6 +662,31 @@ export const POSView: React.FC<POSViewProps> = ({
             )}
           </div>
 
+          {/* Customer Selection & Add Customer Bar */}
+          <div className="pt-2.5 pb-1 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2 shrink-0">
+            <select
+              value={selectedCustomerId}
+              onChange={(e) => setSelectedCustomerId(e.target.value)}
+              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Walk-in Customer</option>
+              {customers.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.contact ? `(${c.contact})` : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowAddCustomerModal(true)}
+              className="flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 transition shrink-0 shadow-xs"
+              title="Add New Customer"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>+ Customer</span>
+            </button>
+          </div>
+
           {/* Cart Items List - Fully Scrollable Inner Container */}
           <div className="flex-1 min-h-0 overflow-y-auto my-2 space-y-2 sm:space-y-2.5 pr-1 overscroll-contain">
             {cart.length === 0 ? (
@@ -871,6 +933,119 @@ export const POSView: React.FC<POSViewProps> = ({
             resetCart();
             onTransactionComplete();
           }}
+        />
+      )}
+
+      {/* Add Customer Modal in POS View */}
+      {showAddCustomerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Add New Customer</h3>
+              </div>
+              <button
+                onClick={() => setShowAddCustomerModal(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!custName.trim()) return;
+                const newCust: Customer = {
+                  id: `cust-${Date.now()}`,
+                  name: custName.trim(),
+                  contact: custContact.trim(),
+                  address: custAddress.trim(),
+                  description: custDescription.trim(),
+                  createdAt: new Date().toISOString(),
+                };
+                try {
+                  await saveCustomer(newCust);
+                  setCustName('');
+                  setCustContact('');
+                  setCustAddress('');
+                  setCustDescription('');
+                  setShowAddCustomerModal(false);
+                  if (onRefreshCustomers) onRefreshCustomers();
+                  setSelectedCustomerId(newCust.id);
+                } catch (err) {
+                  console.error('Save customer error:', err);
+                }
+              }}
+              className="space-y-4 pt-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Customer Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={custName}
+                  onChange={(e) => setCustName(e.target.value)}
+                  placeholder="e.g. Juan Dela Cruz"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Contact Number</label>
+                <input
+                  type="text"
+                  value={custContact}
+                  onChange={(e) => setCustContact(e.target.value)}
+                  placeholder="e.g. 09123456789"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Address</label>
+                <input
+                  type="text"
+                  value={custAddress}
+                  onChange={(e) => setCustAddress(e.target.value)}
+                  placeholder="e.g. Manila, Philippines"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Description / Notes</label>
+                <textarea
+                  value={custDescription}
+                  onChange={(e) => setCustDescription(e.target.value)}
+                  placeholder="Optional notes or description..."
+                  rows={2}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCustomerModal(false)}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-md shadow-blue-500/20"
+                >
+                  Save & Select Customer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Barcode Printing Modal */}
+      {showBarcodeModal && (
+        <BarcodeModal
+          products={products}
+          categories={categories}
+          settings={settings}
+          onClose={() => setShowBarcodeModal(false)}
         />
       )}
     </div>
