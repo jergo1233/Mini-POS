@@ -188,17 +188,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat-4', name: 'Personal Care', description: 'Soap, shampoo, toothpaste' },
 ];
 
-export const DEFAULT_CASHIERS: Cashier[] = [
-  {
-    id: 'cashier-1',
-    name: 'Cashier 1',
-    pin: '0000',
-    role: 'cashier',
-    active: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+export const DEFAULT_CASHIERS: Cashier[] = [];
 
 export const DEFAULT_PRODUCTS: Omit<Product, 'createdAt' | 'updatedAt'>[] = [];
 

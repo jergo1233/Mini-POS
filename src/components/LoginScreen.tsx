@@ -650,8 +650,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                       ))}
                     </select>
                   ) : (
-                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-400">
-                      Default Cashier (PIN: 0000)
+                    <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-900/50 text-xs text-amber-300">
+                      No cashier profiles registered yet. Please ask your Store Administrator to create your cashier account.
                     </div>
                   )}
                 </div>
@@ -697,6 +697,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <div className="relative">
                   <input
                     type="password"
+                    disabled={roleTab === 'cashier' && cashiers.length === 0}
                     value={enteredPin}
                     onChange={(e) => {
                       setEnteredPin(e.target.value);
@@ -708,9 +709,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                         else handleAdminLogin();
                       }
                     }}
-                    placeholder="Enter PIN"
+                    placeholder={roleTab === 'cashier' && cashiers.length === 0 ? "Disabled" : "Enter PIN"}
                     autoFocus
-                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3 px-4 text-center text-xl font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-blue-500 shadow-inner"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3 px-4 text-center text-xl font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-blue-500 shadow-inner disabled:opacity-40 disabled:cursor-not-allowed"
                   />
                   {enteredPin.length > 0 && (
                     <button
@@ -735,8 +736,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               {/* Submit Action Button */}
               <button
                 type="button"
+                disabled={roleTab === 'cashier' && cashiers.length === 0}
                 onClick={roleTab === 'cashier' ? () => handleCashierLogin() : () => handleAdminLogin()}
-                className={`w-full py-3.5 px-4 rounded-2xl font-bold text-white text-sm shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                className={`w-full py-3.5 px-4 rounded-2xl font-bold text-white text-sm shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   roleTab === 'cashier'
                     ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30'
                     : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'

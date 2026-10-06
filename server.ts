@@ -39,17 +39,7 @@ const defaultCentralStore: CentralStore = {
   categories: [],
   transactions: [],
   stockMovements: [],
-  cashiers: [
-    {
-      id: 'cashier-1',
-      name: 'Cashier 1',
-      pin: '0000',
-      role: 'cashier',
-      active: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ],
+  cashiers: [],
   resetRequests: [],
 };
 
