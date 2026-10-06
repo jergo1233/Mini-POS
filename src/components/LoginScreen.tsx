@@ -79,6 +79,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [generatedToken, setGeneratedToken] = useState('');
   const [setupStep, setSetupStep] = useState<'form' | 'qr'>('form');
   const [isConnectingCloud, setIsConnectingCloud] = useState(false);
+  const [forceShowLogin, setForceShowLogin] = useState(false);
 
   const handleLoadFromCloud = async () => {
     setIsConnectingCloud(true);
@@ -386,7 +387,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       {/* Main Container */}
       <div className="w-full max-w-md bg-slate-800/90 backdrop-blur-2xl border border-slate-700/80 rounded-3xl shadow-2xl p-6 md:p-8 relative z-10 space-y-6">
         
-        {!settings.isSetup ? (
+        {(!settings.isSetup && !forceShowLogin) ? (
           // FIRST-TIME ADMIN SETUP FLOW
           setupStep === 'form' ? (
             <form onSubmit={handleSetupSubmit} className="space-y-4 text-left">
@@ -478,6 +479,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <Cloud className={`w-4 h-4 text-sky-400 ${isConnectingCloud ? 'animate-pulse' : ''}`} />
                 <span>{isConnectingCloud ? 'Connecting to Cloud...' : 'Retrieve Existing Store from Cloud'}</span>
               </button>
+
+              <div className="text-center pt-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setForceShowLogin(true)}
+                  className="text-[11px] font-semibold text-slate-400 hover:text-white hover:underline transition-all cursor-pointer"
+                >
+                  Already set up? Skip directly to Login Screen
+                </button>
+              </div>
             </form>
           ) : (
             // SETUP RECOVERY QR SCREEN
@@ -737,8 +748,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
 
             {/* Footer Hint */}
-            <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80">
-              <span>System Creator: Jerome Urbano • Version 5.0 (Offline-Capable)</span>
+            <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80 space-y-2">
+              <div>System Creator: Jerome Urbano • Version 5.0 (Offline-Capable)</div>
+              {forceShowLogin && (
+                <button
+                  type="button"
+                  onClick={() => setForceShowLogin(false)}
+                  className="text-indigo-400 hover:text-indigo-300 font-bold hover:underline transition-all cursor-pointer block w-full text-center"
+                >
+                  Back to Setup / Cloud Import
+                </button>
+              )}
             </div>
           </>
         )}
