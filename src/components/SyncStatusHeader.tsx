@@ -120,15 +120,17 @@ export const SyncStatusHeader: React.FC<SyncStatusHeaderProps> = ({
               {currentSession.role}
             </span>
           </div>
-
-          <button
-            type="button"
-            onClick={onLock}
-            className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
-            title="Lock POS Screen"
-          >
-            <Lock className="w-3.5 h-3.5" />
-          </button>
+          
+          {currentSession.role === 'cashier' && (
+            <button
+              type="button"
+              onClick={onLock}
+              className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+              title="Lock POS Screen"
+            >
+              <Lock className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           <button
             type="button"

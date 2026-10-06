@@ -138,7 +138,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Lock and Logout Footer Buttons */}
       <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
         <div className="flex items-center gap-2">
-          {onLock && (
+          {onLock && userRole === 'cashier' && (
             <button
               type="button"
               onClick={onLock}

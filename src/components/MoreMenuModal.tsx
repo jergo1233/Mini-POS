@@ -108,7 +108,7 @@ export const MoreMenuModal: React.FC<MoreMenuModalProps> = ({
 
           {/* Quick Lock & Logout */}
           <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-2">
-            {onLock && (
+            {onLock && userRole === 'cashier' ? (
               <button
                 type="button"
                 onClick={() => {
@@ -120,6 +120,8 @@ export const MoreMenuModal: React.FC<MoreMenuModalProps> = ({
                 <Lock className="w-4 h-4" />
                 <span>Lock Terminal</span>
               </button>
+            ) : (
+              <div /> // Spacer if lock is hidden
             )}
             {onLogout && (
               <button

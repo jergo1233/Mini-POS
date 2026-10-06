@@ -54,7 +54,11 @@ export default function App() {
       return null;
     }
   });
-  const [isLocked, setIsLocked] = useState(false);
+
+  // Terminal Lock state (Persisted in sessionStorage)
+  const [isLocked, setIsLocked] = useState(() => {
+    return sessionStorage.getItem('pos_terminal_locked') === 'true';
+  });
 
   // App data state
   const [products, setProducts] = useState<Product[]>([]);
@@ -160,7 +164,8 @@ export default function App() {
 
   // Inactivity Auto-Lock Timer
   useEffect(() => {
-    if (!currentSession || isLocked) return;
+    // Only lock terminal for Cashier role as per user requirement
+    if (!currentSession || currentSession.role !== 'cashier' || isLocked) return;
 
     const timeoutMinutes = settings.autoLockMinutes ?? 5;
     if (timeoutMinutes <= 0) return; // 0 = disabled
@@ -170,6 +175,7 @@ export default function App() {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         setIsLocked(true);
+        sessionStorage.setItem('pos_terminal_locked', 'true');
       }, timeoutMinutes * 60 * 1000);
     };
 
@@ -188,6 +194,7 @@ export default function App() {
     setIsLocked(false);
     try {
       sessionStorage.setItem('pos_active_session', JSON.stringify(session));
+      sessionStorage.removeItem('pos_terminal_locked');
     } catch (e) {
       console.debug('sessionStorage warning:', e);
     }
@@ -205,17 +212,23 @@ export default function App() {
     setIsLocked(false);
     try {
       sessionStorage.removeItem('pos_active_session');
+      sessionStorage.removeItem('pos_terminal_locked');
     } catch (e) {
       // ignore
     }
   };
 
   const handleManualLock = () => {
-    setIsLocked(true);
+    // Allow manual lock only if user is a cashier
+    if (currentSession?.role === 'cashier') {
+      setIsLocked(true);
+      sessionStorage.setItem('pos_terminal_locked', 'true');
+    }
   };
 
   const handleUnlock = () => {
     setIsLocked(false);
+    sessionStorage.removeItem('pos_terminal_locked');
   };
 
   // Enforce role-based tab restrictions
