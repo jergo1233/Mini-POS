@@ -81,6 +81,85 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [isConnectingCloud, setIsConnectingCloud] = useState(false);
   const [forceShowLogin, setForceShowLogin] = useState(false);
 
+  const hydrateFromCloud = async (storeData: any) => {
+    if (!storeData) return;
+    try {
+      const db = await openDB();
+
+      // 1. Settings
+      if (storeData.settings) {
+        let remoteSettings = storeData.settings || {};
+        if (!remoteSettings.adminPin) {
+          remoteSettings.adminPin = '1234'; // Safe fallback
+        }
+        const finalSettings: Settings = {
+          ...settings,
+          ...remoteSettings,
+          isSetup: true,
+        };
+        await saveSettings(finalSettings);
+      }
+
+      // 2. Cashiers
+      if (storeData.cashiers && Array.isArray(storeData.cashiers) && storeData.cashiers.length > 0) {
+        const txCashier = db.transaction('cashiers', 'readwrite');
+        const cashierStore = txCashier.objectStore('cashiers');
+        for (const cashier of storeData.cashiers) {
+          cashierStore.put(cashier);
+        }
+        await new Promise<void>((resolve) => {
+          txCashier.oncomplete = () => resolve();
+          txCashier.onerror = () => resolve();
+        });
+        setCashiers(storeData.cashiers);
+        if (storeData.cashiers.length > 0 && !selectedCashierId) {
+          setSelectedCashierId(storeData.cashiers[0].id);
+        }
+      }
+
+      // 3. Products
+      if (storeData.products && Array.isArray(storeData.products) && storeData.products.length > 0) {
+        const txProd = db.transaction('products', 'readwrite');
+        const prodStore = txProd.objectStore('products');
+        for (const prod of storeData.products) {
+          prodStore.put(prod);
+        }
+        await new Promise<void>((resolve) => {
+          txProd.oncomplete = () => resolve();
+          txProd.onerror = () => resolve();
+        });
+      }
+
+      // 4. Categories
+      if (storeData.categories && Array.isArray(storeData.categories) && storeData.categories.length > 0) {
+        const txCat = db.transaction('categories', 'readwrite');
+        const catStore = txCat.objectStore('categories');
+        for (const cat of storeData.categories) {
+          catStore.put(cat);
+        }
+        await new Promise<void>((resolve) => {
+          txCat.oncomplete = () => resolve();
+          txCat.onerror = () => resolve();
+        });
+      }
+
+      // 5. Reset Requests
+      if (storeData.resetRequests && Array.isArray(storeData.resetRequests) && storeData.resetRequests.length > 0) {
+        const txReq = db.transaction('reset_requests', 'readwrite');
+        const reqStore = txReq.objectStore('reset_requests');
+        for (const req of storeData.resetRequests) {
+          reqStore.put(req);
+        }
+        await new Promise<void>((resolve) => {
+          txReq.oncomplete = () => resolve();
+          txReq.onerror = () => resolve();
+        });
+      }
+    } catch (err) {
+      console.error('Failed to hydrate data from cloud:', err);
+    }
+  };
+
   const handleLoadFromCloud = async () => {
     setIsConnectingCloud(true);
     setErrorMsg(null);
@@ -94,91 +173,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         throw new Error(result.message || 'Invalid server response');
       }
 
-      const storeData = result.data;
-      const db = await openDB();
-
-      // Clear existing local collections so we can do a clean remote import
-      const txClear = db.transaction([
-        'products',
-        'categories',
-        'cashiers',
-        'reset_requests',
-        'settings'
-      ], 'readwrite');
-      txClear.objectStore('products').clear();
-      txClear.objectStore('categories').clear();
-      txClear.objectStore('cashiers').clear();
-      txClear.objectStore('reset_requests').clear();
-      txClear.objectStore('settings').clear();
-
-      await new Promise<void>((resolve, reject) => {
-        txClear.oncomplete = () => resolve();
-        txClear.onerror = () => reject(txClear.error);
-      });
-
-      // 1. Save Settings
-      let remoteSettings = storeData.settings || {};
-      if (!remoteSettings.adminPin) {
-        remoteSettings.adminPin = '1234'; // Safe fallback
-      }
-      const finalSettings: Settings = {
-        ...settings,
-        ...remoteSettings,
-        isSetup: true, // Mark setup as completed
-      };
-      await saveSettings(finalSettings);
-
-      // 2. Save Cashiers
-      if (storeData.cashiers && storeData.cashiers.length > 0) {
-        const txCashier = db.transaction('cashiers', 'readwrite');
-        const cashierStore = txCashier.objectStore('cashiers');
-        for (const cashier of storeData.cashiers) {
-          cashierStore.put(cashier);
-        }
-        await new Promise<void>((resolve, reject) => {
-          txCashier.oncomplete = () => resolve();
-          txCashier.onerror = () => reject(txCashier.error);
-        });
-      }
-
-      // 3. Save Products
-      if (storeData.products && storeData.products.length > 0) {
-        const txProd = db.transaction('products', 'readwrite');
-        const prodStore = txProd.objectStore('products');
-        for (const prod of storeData.products) {
-          prodStore.put(prod);
-        }
-        await new Promise<void>((resolve, reject) => {
-          txProd.oncomplete = () => resolve();
-          txProd.onerror = () => reject(txProd.error);
-        });
-      }
-
-      // 4. Save Categories
-      if (storeData.categories && storeData.categories.length > 0) {
-        const txCat = db.transaction('categories', 'readwrite');
-        const catStore = txCat.objectStore('categories');
-        for (const cat of storeData.categories) {
-          catStore.put(cat);
-        }
-        await new Promise<void>((resolve, reject) => {
-          txCat.oncomplete = () => resolve();
-          txCat.onerror = () => reject(txCat.error);
-        });
-      }
-
-      // 5. Save Reset Requests
-      if (storeData.resetRequests && storeData.resetRequests.length > 0) {
-        const txReq = db.transaction('reset_requests', 'readwrite');
-        const reqStore = txReq.objectStore('reset_requests');
-        for (const req of storeData.resetRequests) {
-          reqStore.put(req);
-        }
-        await new Promise<void>((resolve, reject) => {
-          txReq.oncomplete = () => resolve();
-          txReq.onerror = () => reject(txReq.error);
-        });
-      }
+      await hydrateFromCloud(result.data);
 
       alert('Cloud connection successful! Your store data has been retrieved. You can now login using your existing PIN.');
       window.location.reload();
@@ -190,27 +185,65 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  const loadCashiers = async () => {
-    try {
-      const list = await getAllCashiers();
-      setCashiers(list);
-      if (list.length > 0 && !selectedCashierId) {
-        setSelectedCashierId(list[0].id);
-      }
-    } catch (e) {
-      console.error('Failed loading cashiers:', e);
-    }
-  };
-
   useEffect(() => {
-    loadCashiers();
-  }, []);
+    const initData = async () => {
+      const list = await getAllCashiers();
+      if (list.length > 0) {
+        setCashiers(list);
+        if (!selectedCashierId) setSelectedCashierId(list[0].id);
+      }
+
+      // If local storage is empty/fresh (e.g. Incognito) and online, fetch server data automatically in background
+      if (isOnline) {
+        try {
+          const res = await fetch('/api/sync/state');
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && json.data) {
+              await hydrateFromCloud(json.data);
+              const updatedList = await getAllCashiers();
+              if (updatedList.length > 0) {
+                setCashiers(updatedList);
+                setSelectedCashierId((prev) => prev || updatedList[0].id);
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('Background cloud sync check failed:', e);
+        }
+      }
+    };
+
+    initData();
+  }, [isOnline]);
 
   const handleCashierLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMsg(null);
 
-    const cashier = cashiers.find((c) => c.id === selectedCashierId);
+    let cashier = cashiers.find((c) => c.id === selectedCashierId);
+
+    // If cashier profile is missing or PIN doesn't match locally, attempt live cloud check
+    if ((!cashier || cashier.pin !== enteredPin) && isOnline) {
+      try {
+        setLoading(true);
+        const res = await fetch('/api/sync/state');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            await hydrateFromCloud(json.data);
+            const freshCashiers = await getAllCashiers();
+            setCashiers(freshCashiers);
+            cashier = freshCashiers.find((c) => c.id === selectedCashierId);
+          }
+        }
+      } catch (e) {
+        console.debug('Cloud cashier verification failed:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+
     if (!cashier) {
       setErrorMsg('Please select a valid cashier profile.');
       return;
@@ -249,7 +282,32 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       return;
     }
 
-    if (enteredPin !== settings.adminPin) {
+    let currentAdminPin = settings.adminPin;
+    let currentOwnerName = settings.ownerName;
+
+    // If local PIN check fails or is missing, try checking against cloud server live
+    if ((!currentAdminPin || enteredPin !== currentAdminPin) && isOnline) {
+      try {
+        setLoading(true);
+        const res = await fetch('/api/sync/state');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            await hydrateFromCloud(json.data);
+            if (json.data.settings?.adminPin) {
+              currentAdminPin = json.data.settings.adminPin;
+              currentOwnerName = json.data.settings.ownerName || currentOwnerName;
+            }
+          }
+        }
+      } catch (e) {
+        console.debug('Cloud Admin PIN verification failed:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (enteredPin !== currentAdminPin) {
       setErrorMsg('Invalid Admin PIN. Please verify credentials.');
       return;
     }
@@ -257,7 +315,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     onLoginSuccess({
       role: 'admin',
       id: 'admin',
-      name: settings.ownerName || 'Store Administrator',
+      name: currentOwnerName || 'Store Administrator',
       loginTime: new Date().toISOString(),
       isOfflineLogin: !isOnline,
     });
@@ -365,6 +423,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     } catch (err) {
       console.error('Failed to complete Admin Setup:', err);
       setErrorMsg('Failed to save settings. Please try again.');
+    }
+  };
+
+  const handleSkipToLogin = async () => {
+    setForceShowLogin(true);
+    if (isOnline) {
+      try {
+        const res = await fetch('/api/sync/state');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            await hydrateFromCloud(json.data);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
     }
   };
 
@@ -483,7 +558,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <div className="text-center pt-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setForceShowLogin(true)}
+                  onClick={handleSkipToLogin}
                   className="text-[11px] font-semibold text-slate-400 hover:text-white hover:underline transition-all cursor-pointer"
                 >
                   Already set up? Skip directly to Login Screen
