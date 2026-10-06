@@ -28,6 +28,7 @@ import {
   saveSettings,
   openDB,
 } from '../db/indexedDB';
+import { safeFetchJson } from '../utils/apiHelper';
 import { QRScannerModal } from './QRScannerModal';
 import { QRCodeCanvas } from 'qrcode.react';
 
@@ -164,22 +165,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setIsConnectingCloud(true);
     setErrorMsg(null);
     try {
-      const response = await fetch('/api/sync/state');
-      if (!response.ok) {
-        throw new Error(`Failed to contact server: ${response.statusText}`);
-      }
-      const result = await response.json();
+      const result = await safeFetchJson<any>('/api/sync/state');
       if (!result.success || !result.data) {
-        throw new Error(result.message || 'Invalid server response');
+        if (result.isHtmlFallback) {
+          throw new Error('Naka-host sa static deployment (walang active cloud server) o offline. Maaari kang mag-set ng PIN dito o mag-login nang lokal gamit ang "Mag-Login Diretso".');
+        }
+        throw new Error(result.message || 'Hindi ma-reach ang cloud server. Maaari kang mag-setup locally.');
       }
 
       await hydrateFromCloud(result.data);
 
-      alert('Cloud connection successful! Your store data has been retrieved. You can now login using your existing PIN.');
+      alert('Nakuha na ang store data mula sa Cloud! Maaari ka nang mag-login gamit ang iyong PIN.');
       window.location.reload();
     } catch (err: any) {
-      console.error('Cloud load failed:', err);
-      setErrorMsg(err.message || 'Connection failed. Please check your internet connection.');
+      console.warn('Cloud load warning:', err);
+      setErrorMsg(err.message || 'Hindi ma-connect sa cloud server. Maaari kang mag-setup o mag-login gamit ang lokal na database.');
     } finally {
       setIsConnectingCloud(false);
     }
@@ -193,23 +193,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         if (!selectedCashierId) setSelectedCashierId(list[0].id);
       }
 
-      // If local storage is empty/fresh (e.g. Incognito) and online, fetch server data automatically in background
+      // If local storage is empty/fresh (e.g. Incognito) and online, safely check server data in background
       if (isOnline) {
         try {
-          const res = await fetch('/api/sync/state');
-          if (res.ok) {
-            const json = await res.json();
-            if (json.success && json.data) {
-              await hydrateFromCloud(json.data);
-              const updatedList = await getAllCashiers();
-              if (updatedList.length > 0) {
-                setCashiers(updatedList);
-                setSelectedCashierId((prev) => prev || updatedList[0].id);
-              }
+          const res = await safeFetchJson<any>('/api/sync/state');
+          if (res.success && res.data) {
+            await hydrateFromCloud(res.data);
+            const updatedList = await getAllCashiers();
+            if (updatedList.length > 0) {
+              setCashiers(updatedList);
+              setSelectedCashierId((prev) => prev || updatedList[0].id);
             }
           }
         } catch (e) {
-          console.debug('Background cloud sync check failed:', e);
+          console.debug('Background cloud sync check:', e);
         }
       }
     };
@@ -223,44 +220,41 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     let cashier = cashiers.find((c) => c.id === selectedCashierId);
 
-    // If cashier profile is missing or PIN doesn't match locally, attempt live cloud check
+    // If cashier profile is missing or PIN doesn't match locally, attempt safe live cloud check
     if ((!cashier || cashier.pin !== enteredPin) && isOnline) {
       try {
         setLoading(true);
-        const res = await fetch('/api/sync/state');
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.data) {
-            await hydrateFromCloud(json.data);
-            const freshCashiers = await getAllCashiers();
-            setCashiers(freshCashiers);
-            cashier = freshCashiers.find((c) => c.id === selectedCashierId);
-          }
+        const res = await safeFetchJson<any>('/api/sync/state');
+        if (res.success && res.data) {
+          await hydrateFromCloud(res.data);
+          const freshCashiers = await getAllCashiers();
+          setCashiers(freshCashiers);
+          cashier = freshCashiers.find((c) => c.id === selectedCashierId);
         }
       } catch (e) {
-        console.debug('Cloud cashier verification failed:', e);
+        console.debug('Cloud cashier verification:', e);
       } finally {
         setLoading(false);
       }
     }
 
     if (!cashier) {
-      setErrorMsg('Please select a valid cashier profile.');
+      setErrorMsg('Pumili ng Cashier account.');
       return;
     }
 
     if (!enteredPin) {
-      setErrorMsg('Please enter your 4-digit PIN.');
+      setErrorMsg('Ilagay ang iyong 4-digit Cashier PIN.');
       return;
     }
 
     if (cashier.pin !== enteredPin) {
-      setErrorMsg('Incorrect Cashier PIN. Please try again or request a reset.');
+      setErrorMsg('Maling Cashier PIN. Pakisubukang muli o mag-request ng reset.');
       return;
     }
 
     if (!cashier.active) {
-      setErrorMsg('This cashier account is inactive. Please contact your Admin.');
+      setErrorMsg('Ang cashier account na ito ay inactive. Makipag-ugnayan sa Admin.');
       return;
     }
 
@@ -278,37 +272,39 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setErrorMsg(null);
 
     if (!enteredPin) {
-      setErrorMsg('Please enter the Admin PIN.');
+      setErrorMsg('Ilagay ang Admin PIN.');
       return;
     }
 
     let currentAdminPin = settings.adminPin;
     let currentOwnerName = settings.ownerName;
 
-    // If local PIN check fails or is missing, try checking against cloud server live
+    // If local PIN check fails or is missing, try checking against cloud server safely
     if ((!currentAdminPin || enteredPin !== currentAdminPin) && isOnline) {
       try {
         setLoading(true);
-        const res = await fetch('/api/sync/state');
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.data) {
-            await hydrateFromCloud(json.data);
-            if (json.data.settings?.adminPin) {
-              currentAdminPin = json.data.settings.adminPin;
-              currentOwnerName = json.data.settings.ownerName || currentOwnerName;
-            }
+        const res = await safeFetchJson<any>('/api/sync/state');
+        if (res.success && res.data) {
+          await hydrateFromCloud(res.data);
+          if (res.data.settings?.adminPin) {
+            currentAdminPin = res.data.settings.adminPin;
+            currentOwnerName = res.data.settings.ownerName || currentOwnerName;
           }
         }
       } catch (e) {
-        console.debug('Cloud Admin PIN verification failed:', e);
+        console.debug('Cloud Admin PIN verification:', e);
       } finally {
         setLoading(false);
       }
     }
 
-    if (enteredPin !== currentAdminPin) {
-      setErrorMsg('Invalid Admin PIN. Please verify credentials.');
+    // Allow default PIN '1234' if not yet configured locally or if matching
+    const isPinMatch = 
+      (currentAdminPin && enteredPin === currentAdminPin) ||
+      (!currentAdminPin && (enteredPin === '1234' || enteredPin === settings.adminPin));
+
+    if (!isPinMatch) {
+      setErrorMsg('Maling Admin PIN. Pakitingnan ang iyong PIN o mag-setup.');
       return;
     }
 
@@ -420,6 +416,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       await saveSettings(updatedSettings);
       setGeneratedToken(newToken);
       setSetupStep('qr');
+
+      // Attempt background sync if online without blocking
+      if (isOnline) {
+        safeFetchJson('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: updatedSettings }),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error('Failed to complete Admin Setup:', err);
       setErrorMsg('Failed to save settings. Please try again.');
@@ -428,14 +433,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   const handleSkipToLogin = async () => {
     setForceShowLogin(true);
+    setErrorMsg(null);
     if (isOnline) {
       try {
-        const res = await fetch('/api/sync/state');
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.data) {
-            await hydrateFromCloud(json.data);
-          }
+        const res = await safeFetchJson<any>('/api/sync/state');
+        if (res.success && res.data) {
+          await hydrateFromCloud(res.data);
         }
       } catch (e) {
         // ignore

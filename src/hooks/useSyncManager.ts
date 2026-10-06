@@ -25,6 +25,7 @@ import {
   getSettings,
   saveSettings,
 } from '../db/indexedDB';
+import { safeFetchJson } from '../utils/apiHelper';
 
 export type SyncState = 'synced' | 'pending' | 'syncing' | 'failed';
 
@@ -106,8 +107,8 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
         // ignore
       }
 
-      // Send to server /api/sync
-      const response = await fetch('/api/sync', {
+      // Send to server /api/sync safely
+      const apiRes = await safeFetchJson<any>('/api/sync', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -126,14 +127,11 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Sync server responded with ${response.status}`);
+      if (!apiRes.success) {
+        throw new Error(apiRes.message || 'Sync failed on server');
       }
 
-      const resData = await response.json();
-      if (!resData.success) {
-        throw new Error(resData.message || 'Sync failed on server');
-      }
+      const resData = apiRes.data || apiRes;
 
       // Mark locally sent items as synced
       await markPendingDataAsSynced({
