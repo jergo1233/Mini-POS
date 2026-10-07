@@ -38,7 +38,6 @@ export const SalesView: React.FC<SalesViewProps> = ({
   const [dateFilter, setDateFilter] = useState('');
   const [cashierFilter, setCashierFilter] = useState('all');
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [syncFilter, setSyncFilter] = useState<'all' | 'synced' | 'pending' | 'refunded'>('all');
 
   // Unique cashier names list for filter dropdown
   const uniqueCashiers = Array.from(
@@ -60,12 +59,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
     const matchesDate = !dateFilter || tx.date.startsWith(dateFilter);
     const txCashierName = tx.cashier || settings.ownerName || 'Admin / Owner';
     const matchesCashier = cashierFilter === 'all' || txCashierName === cashierFilter;
-    const matchesSync =
-      syncFilter === 'all' ||
-      (syncFilter === 'pending' && tx.syncStatus === 'pending') ||
-      (syncFilter === 'refunded' && tx.status === 'refunded') ||
-      (syncFilter === 'synced' && tx.syncStatus !== 'pending' && tx.status !== 'refunded');
-    return matchesQ && matchesDate && matchesCashier && matchesSync;
+    return matchesQ && matchesDate && matchesCashier;
   });
 
   const exportExcel = () => {
@@ -79,7 +73,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
       Total: tx.total,
       Payment: tx.payment,
       Change: tx.change,
-      'Sync Status': (tx.syncStatus || 'synced').toUpperCase(),
+      Status: (tx.status || 'completed').toUpperCase(),
       'Transaction ID': tx.id,
     }));
 
@@ -93,7 +87,6 @@ export const SalesView: React.FC<SalesViewProps> = ({
   };
 
   const totalSalesRevenue = filteredTransactions.reduce((sum, tx) => sum + tx.total, 0);
-  const pendingSyncTxCount = filteredTransactions.filter((t) => t.syncStatus === 'pending').length;
 
   return (
     <div className="space-y-6 pb-20 md:pb-6">
@@ -121,7 +114,7 @@ export const SalesView: React.FC<SalesViewProps> = ({
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-2xl bg-white dark:bg-slate-900 p-5 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="text-sm font-medium text-slate-500">Total Transactions</div>
           <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
@@ -134,21 +127,6 @@ export const SalesView: React.FC<SalesViewProps> = ({
           <div className="text-2xl font-bold text-emerald-600 mt-1">
             {settings.currency}
             {totalSalesRevenue.toFixed(2)}
-          </div>
-        </div>
-
-        <div className="rounded-2xl bg-white dark:bg-slate-900 p-5 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="text-sm font-medium text-slate-500">Sync Status Overview</div>
-          <div className="flex items-center gap-2 mt-1">
-            {pendingSyncTxCount > 0 ? (
-              <span className="text-sm font-bold text-amber-600 flex items-center gap-1">
-                <Clock className="w-4 h-4" /> {pendingSyncTxCount} Offline / Pending Sync
-              </span>
-            ) : (
-              <span className="text-sm font-bold text-emerald-600 flex items-center gap-1">
-                <CheckCircle2 className="w-4 h-4" /> All Sales Synchronized
-              </span>
-            )}
           </div>
         </div>
       </div>
@@ -188,16 +166,6 @@ export const SalesView: React.FC<SalesViewProps> = ({
                 👤 {c}
               </option>
             ))}
-          </select>
-
-          <select
-            value={syncFilter}
-            onChange={(e) => setSyncFilter(e.target.value as any)}
-            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-hidden"
-          >
-            <option value="all">All Sync States</option>
-            <option value="synced">Synced Only</option>
-            <option value="pending">Pending Sync</option>
           </select>
 
           {dateFilter && (

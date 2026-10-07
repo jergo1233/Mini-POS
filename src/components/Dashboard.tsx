@@ -39,22 +39,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const isCashier = userRole === 'cashier';
   const [dashboardTimeFilter, setDashboardTimeFilter] = useState<'today' | '7days' | 'month'>('today');
 
-  // Compute metrics (if cashier and restricted, filter to their shift)
   const todayStr = new Date().toISOString().split('T')[0];
-  const relevantTransactions =
-    isCashier && !settings.cashierCanViewAllSales && userName
-      ? transactions.filter((t) => !t.cashier || t.cashier === userName)
-      : transactions;
 
-  const todayTransactions = relevantTransactions.filter((t) => t.date.startsWith(todayStr));
-  const todaySales = todayTransactions.reduce((sum, t) => sum + t.total, 0);
+  // OVERALL STORE METRICS (Always Store-Wide)
+  const storeTodayTransactions = transactions.filter((t) => t.date.startsWith(todayStr));
+  const storeTodaySales = storeTodayTransactions.reduce((sum, t) => sum + t.total, 0);
+  const storeTotalRevenue = transactions.reduce((sum, t) => sum + t.total, 0);
+
+  // CASHIER SPECIFIC METRICS (Separated for Cashier Session)
+  const myTransactions = transactions.filter((t) => t.cashier === userName);
+  const myTodayTransactions = myTransactions.filter((t) => t.date.startsWith(todayStr));
+  const myTodaySales = myTodayTransactions.reduce((sum, t) => sum + t.total, 0);
+  const myTotalSales = myTransactions.reduce((sum, t) => sum + t.total, 0);
+  const myStarRating = myTransactions.length >= 20 ? '⭐⭐⭐⭐⭐' : myTransactions.length >= 10 ? '⭐⭐⭐⭐' : myTransactions.length >= 5 ? '⭐⭐⭐' : myTransactions.length >= 1 ? '⭐⭐' : '⭐';
 
   const totalProducts = products.length;
   const lowStockProducts = products.filter((p) => p.stock <= settings.lowStockThreshold);
 
-  const totalRevenue = relevantTransactions.reduce((sum, t) => sum + t.total, 0);
-
-  // Cashier ratings calculations for Dashboard
+  // Cashier ratings calculations for Dashboard (Admin & Overview)
   const now = new Date();
   const filteredForRatings = transactions.filter(t => {
     const txDate = new Date(t.date);
@@ -116,12 +118,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
 
-      {/* Metrics Grid */}
+      {/* Top Metrics Grid (Store-Wide) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-2xl bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-500">
-              {isCashier ? "My Today's Sales" : "Today's Total Sales"}
+              Store Today's Total Sales
             </span>
             <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2 text-emerald-600 dark:text-emerald-400">
               <TrendingUp className="w-5 h-5" />
@@ -129,17 +131,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
             {settings.currency}
-            {todaySales.toFixed(2)}
+            {storeTodaySales.toFixed(2)}
           </div>
           <div className="mt-1 text-xs text-slate-500">
-            {todayTransactions.length} sales receipts today
+            {storeTodayTransactions.length} store sales receipts today
           </div>
         </div>
 
         <div className="rounded-2xl bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-500">
-              {isCashier ? 'Shift Total Sales' : 'Total Revenue'}
+              Store Total Revenue
             </span>
             <div className="rounded-xl bg-blue-50 dark:bg-blue-950/50 p-2 text-blue-600 dark:text-blue-400">
               <TrendingUp className="w-5 h-5" />
@@ -147,10 +149,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <div className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
             {settings.currency}
-            {totalRevenue.toFixed(2)}
+            {storeTotalRevenue.toFixed(2)}
           </div>
           <div className="mt-1 text-xs text-slate-500">
-            {relevantTransactions.length} transactions recorded
+            {transactions.length} total store transactions
           </div>
         </div>
 
@@ -182,6 +184,56 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* SEPARATED SECTION: My Individual Cashier Shift Sales (Cashier Session Only) */}
+      {isCashier && (
+        <div className="rounded-2xl bg-gradient-to-br from-blue-900 via-indigo-900 to-slate-900 text-white p-6 shadow-lg space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-white/10 text-amber-400 backdrop-blur-xs">
+                <User className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg text-white flex items-center gap-2">
+                  <span>My Individual Cashier Sales</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-500/30 text-blue-200 border border-blue-400/30 text-xs font-bold">
+                    👤 {userName || 'Cashier'} Shift
+                  </span>
+                </h3>
+                <p className="text-xs text-blue-200/80">
+                  Separated sales and performance processed specifically by your cashier account
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-amber-400 font-bold tracking-wider">{myStarRating}</div>
+              <div className="text-[10px] text-blue-200">Performance Rating</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div className="p-4 rounded-xl bg-white/10 backdrop-blur-xs border border-white/10 space-y-1">
+              <div className="text-xs text-blue-200 font-medium">My Sales Today</div>
+              <div className="text-2xl font-black text-emerald-400">
+                {settings.currency}{myTodaySales.toFixed(2)}
+              </div>
+              <div className="text-[11px] text-blue-200/70">
+                {myTodayTransactions.length} receipts issued by me today
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-white/10 backdrop-blur-xs border border-white/10 space-y-1">
+              <div className="text-xs text-blue-200 font-medium">My Total Cumulative Sales</div>
+              <div className="text-2xl font-black text-white">
+                {settings.currency}{myTotalSales.toFixed(2)}
+              </div>
+              <div className="text-[11px] text-blue-200/70">
+                {myTransactions.length} total receipts processed
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cashier Performance & Ratings Leaderboard */}
       {!isCashier && (
