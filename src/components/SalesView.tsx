@@ -234,26 +234,15 @@ export const SalesView: React.FC<SalesViewProps> = ({
                       {tx.total.toFixed(2)}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex flex-col gap-1">
-                        <span
-                          className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit ${
-                            tx.status === 'refunded'
-                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
-                              : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
-                          }`}
-                        >
-                          {tx.status === 'refunded' ? 'Refunded' : 'Completed'}
-                        </span>
-                        <span
-                          className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit ${
-                            tx.syncStatus === 'pending'
-                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
-                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                          }`}
-                        >
-                          {tx.syncStatus === 'pending' ? 'Pending Sync' : 'Synced'}
-                        </span>
-                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit ${
+                          tx.status === 'refunded'
+                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                            : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                        }`}
+                      >
+                        {tx.status === 'refunded' ? 'Refunded' : 'Completed'}
+                      </span>
                     </td>
                     <td className="py-3 px-4 text-right">
                       <button

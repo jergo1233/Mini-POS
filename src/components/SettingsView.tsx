@@ -72,7 +72,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onRefresh,
 }) => {
   const [storeName, setStoreName] = useState(settings.storeName);
-  const [ownerName, setOwnerName] = useState(settings.ownerName || 'Jerome Urbano');
+  const [ownerName, setOwnerName] = useState(settings.ownerName || '');
   const [storeAddress, setStoreAddress] = useState(settings.storeAddress);
   const [storeContact, setStoreContact] = useState(settings.storeContact);
   const [storeTin, setStoreTin] = useState(settings.storeTin || '');

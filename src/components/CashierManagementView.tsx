@@ -49,7 +49,7 @@ export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
 }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCashierName, setNewCashierName] = useState('');
-  const [newCashierPin, setNewCashierPin] = useState('0000');
+  const [newCashierPin, setNewCashierPin] = useState('');
   const [editingCashier, setEditingCashier] = useState<Cashier | null>(null);
   const [editPin, setEditPin] = useState('');
 
@@ -65,12 +65,12 @@ export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
 
   const handleCreateCashier = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCashierName.trim()) return;
+    if (!newCashierName.trim() || !newCashierPin.trim()) return;
 
     const newCashier: Cashier = {
       id: `cashier-${Date.now()}`,
       name: newCashierName.trim(),
-      pin: newCashierPin.trim() || '0000',
+      pin: newCashierPin.trim(),
       role: 'cashier',
       active: true,
       createdAt: new Date().toISOString(),
@@ -83,7 +83,7 @@ export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
         onTriggerSync().catch(() => {});
       }
       setNewCashierName('');
-      setNewCashierPin('0000');
+      setNewCashierPin('');
       setShowAddModal(false);
       onRefresh();
     } catch (err) {
@@ -452,7 +452,7 @@ export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Maria Santos"
+                  placeholder="e.g. Cashier Name"
                   value={newCashierName}
                   onChange={(e) => setNewCashierName(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white"
@@ -467,7 +467,7 @@ export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
                   type="text"
                   required
                   maxLength={6}
-                  placeholder="0000"
+                  placeholder="Enter 4-digit PIN"
                   value={newCashierPin}
                   onChange={(e) => setNewCashierPin(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm font-mono text-slate-900 dark:text-white"

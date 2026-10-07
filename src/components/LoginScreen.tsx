@@ -91,8 +91,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   // First-time Setup states
   const [setupPin, setSetupPin] = useState('');
   const [setupConfirmPin, setSetupConfirmPin] = useState('');
-  const [setupStoreName, setSetupStoreName] = useState(settings.storeName || 'Mini Universal POS Store');
-  const [setupOwnerName, setSetupOwnerName] = useState(settings.ownerName || 'Store Owner');
+  const [setupStoreName, setSetupStoreName] = useState(settings.storeName || '');
+  const [setupOwnerName, setSetupOwnerName] = useState(settings.ownerName || '');
   const [generatedRecoveryCode, setGeneratedRecoveryCode] = useState('');
   const [setupStep, setSetupStep] = useState<'form' | 'recoveryCode'>('form');
   const [setupCopied, setSetupCopied] = useState(false);
@@ -588,7 +588,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   required
                   value={setupOwnerName}
                   onChange={(e) => setSetupOwnerName(e.target.value)}
-                  placeholder="e.g. Jerome Urbano"
+                  placeholder="e.g. Store Owner Name"
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>

@@ -164,7 +164,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  storeName: 'Mini Universal POS Store',
+  storeName: '',
   storeAddress: '123 Business Rd, Metro Manila, Philippines',
   storeContact: '+63 912 345 6789',
   storeTin: '123-456-789-000',
@@ -176,7 +176,7 @@ export const DEFAULT_SETTINGS: Settings = {
   adminPin: '',
   recoveryToken: '',
   darkMode: false,
-  ownerName: 'Jerome Urbano',
+  ownerName: '',
   isSetup: false,
   animatedBackground: true,
   receiptPaperSize: '80mm',
