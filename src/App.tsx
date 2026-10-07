@@ -191,6 +191,8 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (!window.confirm('Are you sure you want to sign out?')) return;
+    
     setCurrentSession(null);
     setIsLocked(false);
     try {
@@ -229,7 +231,7 @@ export default function App() {
   // Enforce role-based tab restrictions
   useEffect(() => {
     if (currentSession?.role === 'cashier') {
-      const allowedTabs: TabType[] = ['pos', 'sales', 'dashboard', 'customers', 'backup'];
+      const allowedTabs: TabType[] = ['pos', 'sales', 'dashboard', 'customers'];
       if (!allowedTabs.includes(currentTab)) {
         setCurrentTab('pos');
       }
@@ -386,6 +388,7 @@ export default function App() {
               settings={settings}
               userRole={currentSession.role}
               userName={currentSession.name}
+              onRefresh={loadData}
             />
           )}
 

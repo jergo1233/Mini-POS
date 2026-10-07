@@ -56,13 +56,13 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         </button>
       ) : (
         <button
-          onClick={() => onSelectTab('backup')}
+          onClick={() => onSelectTab('sales')}
           className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-            currentTab === 'backup' ? 'text-blue-600 font-semibold' : 'text-slate-500 hover:text-slate-900'
+            currentTab === 'sales' ? 'text-blue-600 font-semibold' : 'text-slate-500 hover:text-slate-900'
           }`}
         >
-          <Package className="w-5 h-5" />
-          <span className="text-[10px]">Backup</span>
+          <ReceiptText className="w-5 h-5" />
+          <span className="text-[10px]">Sales</span>
         </button>
       )}
 

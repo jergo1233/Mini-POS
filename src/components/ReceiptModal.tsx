@@ -22,9 +22,12 @@ import {
   Calendar,
   User,
   Hash,
-  FileBadge
+  FileBadge,
+  RotateCcw,
+  AlertTriangle,
+  Tag
 } from 'lucide-react';
-import { Transaction, Settings } from '../db/indexedDB';
+import { Transaction, Settings, processRefund } from '../db/indexedDB';
 
 interface ReceiptModalProps {
   transaction: Transaction;
@@ -32,6 +35,9 @@ interface ReceiptModalProps {
   onClose: () => void;
   onNewTransaction?: () => void;
   isReprint?: boolean;
+  userRole?: 'admin' | 'cashier';
+  userName?: string;
+  onRefundComplete?: () => void;
 }
 
 type PaperSize = '80mm' | '58mm' | 'full';
@@ -42,12 +48,16 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onClose,
   onNewTransaction,
   isReprint = false,
+  userRole = 'admin',
+  userName = 'Admin',
+  onRefundComplete,
 }) => {
   const [paperSize, setPaperSize] = useState<PaperSize>(
     (settings.receiptPaperSize as PaperSize) || '80mm'
   );
   const [copied, setCopied] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [isRefunding, setIsRefund] = useState(false);
 
   const totalItemsCount = transaction.items.reduce((sum, i) => sum + i.quantity, 0);
   const formattedDate = new Date(transaction.date).toLocaleString('en-US', {
@@ -57,6 +67,24 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  const handleRefund = async () => {
+    if (transaction.status === 'refunded') return;
+    if (!window.confirm('Are you sure you want to refund this transaction? This will return items to stock.')) return;
+
+    try {
+      setIsRefund(true);
+      await processRefund(transaction.id, userName, userRole as any);
+      alert('Transaction refunded successfully. Stock has been updated.');
+      if (onRefundComplete) onRefundComplete();
+      onClose();
+    } catch (err) {
+      console.error('Refund error:', err);
+      alert('Failed to process refund: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsRefund(false);
+    }
+  };
 
   // Handle direct window print with robust fallback
   const handlePrint = () => {
@@ -198,11 +226,15 @@ ${settings.receiptFooter || 'Thank you for your business!'}
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-slate-900 dark:text-white leading-tight">
-                  {isReprint ? 'Receipt Slip (Reprint)' : 'Transaction Complete'}
+                  {transaction.status === 'refunded' ? 'Refunded Transaction' : isReprint ? 'Receipt Slip (Reprint)' : 'Transaction Complete'}
                 </h3>
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                  <Sparkles className="w-2.5 h-2.5" />
-                  Paid
+                <span className={`hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  transaction.status === 'refunded' 
+                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' 
+                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                }`}>
+                  {transaction.status === 'refunded' ? <RotateCcw className="w-2.5 h-2.5" /> : <Sparkles className="w-2.5 h-2.5" />}
+                  {transaction.status === 'refunded' ? 'Refunded' : 'Paid'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -367,9 +399,25 @@ ${settings.receiptFooter || 'Thank you for your business!'}
               
               <div className="divide-y divide-slate-100 my-1">
                 {transaction.items.map((item, index) => (
-                  <div key={index} className="py-2 space-y-0.5 page-break-inside-avoid">
-                    <div className="font-bold text-slate-950 truncate leading-snug">
-                      {item.name}
+                  <div key={index} className="py-2 space-y-1 page-break-inside-avoid">
+                    <div className="flex gap-2">
+                      {item.image && (
+                        <div className="no-print h-8 w-8 rounded-lg overflow-hidden shrink-0 border border-slate-100">
+                          <img 
+                            src={typeof item.image === 'string' ? item.image : URL.createObjectURL(item.image)} 
+                            className="h-full w-full object-cover"
+                            alt=""
+                          />
+                        </div>
+                      )}
+                      {!item.image && (
+                         <div className="no-print h-8 w-8 rounded-lg overflow-hidden shrink-0 border border-slate-100 bg-slate-50 flex items-center justify-center">
+                            <Tag className="w-4 h-4 text-slate-300" />
+                         </div>
+                      )}
+                      <div className="font-bold text-slate-950 truncate leading-snug flex-1">
+                        {item.name}
+                      </div>
                     </div>
                     <div className="grid grid-cols-12 text-slate-600 text-[11px]">
                       <span className="col-span-6">
@@ -485,6 +533,23 @@ ${settings.receiptFooter || 'Thank you for your business!'}
 
           {/* Primary Print and New Sale / Close Action Buttons */}
           <div className="flex items-center gap-2 sm:gap-3 pt-1">
+            {isReprint && transaction.status !== 'refunded' && (
+              <button
+                type="button"
+                onClick={handleRefund}
+                disabled={isRefunding}
+                className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900/50 py-3 text-xs sm:text-sm font-bold transition active:scale-98 cursor-pointer disabled:opacity-50"
+                title="Refund this transaction and return items to stock"
+              >
+                {isRefunding ? (
+                   <RotateCcw className="w-4 h-4 animate-spin" />
+                ) : (
+                   <RotateCcw className="w-4 h-4" />
+                )}
+                <span>Refund Order</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handlePrint}

@@ -132,7 +132,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [price, setPrice] = useState<number>(0);
   const [cost, setCost] = useState<number>(0);
   const [stock, setStock] = useState<number>(0);
-  const [categoryId, setCategoryId] = useState(categories[0]?.id || '');
+  const [categoryId, setCategoryId] = useState('');
   const [customCategoryName, setCustomCategoryName] = useState('');
   const [description, setDescription] = useState('');
   const [imageBlob, setImageBlob] = useState<Blob | string | undefined>(undefined);
@@ -214,7 +214,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setPrice(0);
     setCost(0);
     setStock(10);
-    setCategoryId(categories[0]?.id || '');
+    // Set to empty for forced user selection
+    setCategoryId('');
     setCustomCategoryName('');
     setDescription('');
     setImageBlob(undefined);
@@ -488,6 +489,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
         setPrice(0);
         setCost(0);
         setStock(10);
+        setCategoryId('');
         setDescription('');
         setImageBlob(undefined);
         setImagePreview('');
@@ -1475,7 +1477,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     setName(e.target.value);
                     if (formError) setFormError(null);
                   }}
-                  placeholder="e.g. Coca-Cola 300ml"
+                  placeholder="e.g. Universal Product Name"
                   className={`w-full rounded-xl border px-3.5 py-2 text-sm dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 ${
                     name.trim() && products.some(p => p.id !== editingProduct?.id && p.name.trim().toLowerCase() === name.trim().toLowerCase())
                       ? 'border-red-500 focus:ring-red-400 bg-red-50/20 dark:bg-red-950/20'
@@ -1583,36 +1585,40 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  Category *
+                  Category Selection *
                 </label>
-                <select
-                  value={categoryId}
-                  onChange={(e) => {
-                    setCategoryId(e.target.value);
-                    if (e.target.value !== '__other__') {
-                      setCustomCategoryName('');
-                    }
-                  }}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                >
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                  <option value="__other__">+ Other (Type manually)...</option>
-                </select>
+                <div className="space-y-2">
+                  <select
+                    required
+                    value={categoryId}
+                    onChange={(e) => {
+                      setCategoryId(e.target.value);
+                      if (e.target.value !== '__other__') {
+                        setCustomCategoryName('');
+                      }
+                    }}
+                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="" disabled>Select a Category...</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                    <option value="__other__">+ Create New Category...</option>
+                  </select>
 
-                {categoryId === '__other__' && (
-                  <div className="mt-2">
-                    <input
-                      type="text"
-                      placeholder="Enter new category name..."
-                      value={customCategoryName}
-                      onChange={(e) => setCustomCategoryName(e.target.value)}
-                      required
-                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
-                )}
+                  {categoryId === '__other__' && (
+                    <div className="animate-in slide-in-from-top-1 duration-200">
+                      <input
+                        type="text"
+                        placeholder="Type new category name here..."
+                        value={customCategoryName}
+                        onChange={(e) => setCustomCategoryName(e.target.value)}
+                        required
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>

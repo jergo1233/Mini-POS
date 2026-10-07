@@ -66,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'reports' as TabType, label: 'Reports', icon: BarChart3, roles: ['admin'] },
     { id: 'cashiers' as TabType, label: 'Cashier Access', icon: UserCheck, roles: ['admin'], badge: pendingResetRequestsCount },
     { id: 'customers' as TabType, label: 'Customers', icon: Users, roles: ['admin', 'cashier'] },
-    { id: 'backup' as TabType, label: 'Backup & Transfer', icon: Download, roles: ['admin', 'cashier'] },
+    { id: 'backup' as TabType, label: 'Backup & Transfer', icon: Download, roles: ['admin'] },
     { id: 'settings' as TabType, label: 'Settings', icon: SettingsIcon, roles: ['admin'] },
   ];
 

@@ -52,9 +52,8 @@ export const MoreMenuModal: React.FC<MoreMenuModalProps> = ({
   ];
 
   const cashierItems: MoreMenuItem[] = [
-    { id: 'sales', label: 'My Sales History', icon: ReceiptText },
+    { id: 'sales', label: 'Sales History', icon: ReceiptText },
     { id: 'customers', label: 'Customers', icon: Users },
-    { id: 'backup', label: 'Backup & ZIP Transfer', icon: Package },
   ];
 
   const items = userRole === 'admin' ? adminItems : cashierItems;

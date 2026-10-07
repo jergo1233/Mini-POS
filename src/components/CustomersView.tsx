@@ -179,7 +179,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Juan dela Cruz"
+                  placeholder="e.g. John Doe"
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
@@ -192,7 +192,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   type="text"
                   value={contact}
                   onChange={(e) => setContact(e.target.value)}
-                  placeholder="e.g. +63 912 345 6789"
+                  placeholder="e.g. +1 234 567 890"
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>

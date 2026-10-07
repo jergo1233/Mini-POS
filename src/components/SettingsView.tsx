@@ -284,11 +284,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     } else {
       alert(
-        'Paano I-install sa Mobile at PC:\n\n' +
-        '• Android (Chrome): I-tap ang Menu (tatlong tuldok) sa itaas ng browser, pagkatapos ay piliin ang "Install app" o "Add to Home screen".\n\n' +
-        '• iPhone/iPad (Safari): I-tap ang Share button sa ibaba, pagkatapos ay piliin ang "Add to Home Screen".\n\n' +
-        '• PC / Laptop (Chrome/Edge): I-click ang Install icon sa kanang bahagi ng address bar o ang menu sa itaas.\n\n' +
-        'Paalala: Kung kasalukuyan kayong nasa AI Studio preview, buksan muna ang app sa isang bagong tab ng inyong browser.'
+        'How to Install on Mobile and PC:\n\n' +
+        '• Android (Chrome): Tap the Menu (three dots) at the top of the browser, then select "Install app" or "Add to Home screen".\n\n' +
+        '• iPhone/iPad (Safari): Tap the Share button at the bottom, then select "Add to Home Screen".\n\n' +
+        '• PC / Laptop (Chrome/Edge): Click the Install icon on the right side of the address bar or the menu at the top.\n\n' +
+        'Note: If you are currently in AI Studio preview, please open the app in a new browser tab first.'
       );
     }
   };
@@ -941,7 +941,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white text-base">Receipt Design & Customization</h3>
-              <p className="text-xs text-slate-500">I-customize ang hitsura, headers, footers, at layout ng iyong resibo na may live preview</p>
+              <p className="text-xs text-slate-500">Customize the appearance, headers, footers, and layout of your receipt with live preview</p>
             </div>
           </div>
 
@@ -976,6 +976,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left / Settings Controls */}
           <div className="lg:col-span-7 space-y-4">
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+              <p className="font-bold uppercase mb-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> Universal Labeling Tip:
+              </p>
+              Use generic product names and standardized currency for a truly professional checkout experience.
+            </div>
             {/* Paper Size & Font Style */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -1364,7 +1370,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span className="font-semibold text-sm text-slate-900 dark:text-white">
               {exporting ? 'Exporting...' : 'Complete ZIP Backup'}
             </span>
-            <span className="text-xs text-slate-500 mt-1">Lahat ng Records + Product Photos</span>
+            <span className="text-xs text-slate-500 mt-1">All Records + Product Photos</span>
           </button>
 
           {/* Export Products Only */}

@@ -24,6 +24,7 @@ interface SalesViewProps {
   settings: Settings;
   userRole?: 'admin' | 'cashier';
   userName?: string;
+  onRefresh?: () => void;
 }
 
 export const SalesView: React.FC<SalesViewProps> = ({
@@ -31,11 +32,12 @@ export const SalesView: React.FC<SalesViewProps> = ({
   settings,
   userRole = 'admin',
   userName,
+  onRefresh,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [syncFilter, setSyncFilter] = useState<'all' | 'synced' | 'pending'>('all');
+  const [syncFilter, setSyncFilter] = useState<'all' | 'synced' | 'pending' | 'refunded'>('all');
 
   // If cashier and not allowed to view all sales, show their own transactions
   const roleFilteredTransactions =
@@ -53,7 +55,8 @@ export const SalesView: React.FC<SalesViewProps> = ({
     const matchesSync =
       syncFilter === 'all' ||
       (syncFilter === 'pending' && tx.syncStatus === 'pending') ||
-      (syncFilter === 'synced' && tx.syncStatus !== 'pending');
+      (syncFilter === 'refunded' && tx.status === 'refunded') ||
+      (syncFilter === 'synced' && tx.syncStatus !== 'pending' && tx.status !== 'refunded');
     return matchesQ && matchesDate && matchesSync;
   });
 
@@ -198,15 +201,14 @@ export const SalesView: React.FC<SalesViewProps> = ({
                 <th className="py-3 px-4">Cashier</th>
                 <th className="py-3 px-4">Items Sold</th>
                 <th className="py-3 px-4">Total Amount</th>
-                <th className="py-3 px-4">Payment & Change</th>
-                <th className="py-3 px-4">Sync Status</th>
+                <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <ReceiptText className="w-10 h-10 stroke-1 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
                     <p className="font-semibold">No transactions found</p>
                     <p className="text-xs text-slate-400 mt-0.5">
@@ -242,26 +244,27 @@ export const SalesView: React.FC<SalesViewProps> = ({
                       {settings.currency}
                       {tx.total.toFixed(2)}
                     </td>
-                    <td className="py-3 px-4 text-xs text-slate-500 dark:text-slate-400">
-                      Paid: {settings.currency}
-                      {tx.payment.toFixed(2)} • Change: {settings.currency}
-                      {tx.change.toFixed(2)}
-                    </td>
                     <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                          tx.syncStatus === 'pending'
-                            ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
-                            : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
-                        }`}
-                      >
+                      <div className="flex flex-col gap-1">
                         <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            tx.syncStatus === 'pending' ? 'bg-amber-500' : 'bg-emerald-500'
+                          className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit ${
+                            tx.status === 'refunded'
+                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                              : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
                           }`}
-                        />
-                        {tx.syncStatus === 'pending' ? 'Pending Sync' : 'Synced'}
-                      </span>
+                        >
+                          {tx.status === 'refunded' ? 'Refunded' : 'Completed'}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit ${
+                            tx.syncStatus === 'pending'
+                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                          }`}
+                        >
+                          {tx.syncStatus === 'pending' ? 'Pending Sync' : 'Synced'}
+                        </span>
+                      </div>
                     </td>
                     <td className="py-3 px-4 text-right">
                       <button
@@ -286,6 +289,10 @@ export const SalesView: React.FC<SalesViewProps> = ({
           transaction={selectedTx}
           settings={settings}
           onClose={() => setSelectedTx(null)}
+          isReprint={true}
+          userRole={userRole}
+          userName={userName}
+          onRefundComplete={onRefresh}
         />
       )}
     </div>

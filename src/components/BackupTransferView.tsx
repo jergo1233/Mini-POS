@@ -342,7 +342,7 @@ export const BackupTransferView: React.FC<BackupTransferViewProps> = ({
               <Download className="w-6 h-6" />
             </div>
             <span className="font-bold text-sm text-slate-900 dark:text-white">Complete ZIP Backup</span>
-            <span className="text-[10px] text-slate-500 mt-1">Lahat ng records + Product Photos</span>
+            <span className="text-[10px] text-slate-500 mt-1">All business records + Product Photos</span>
           </button>
 
           {/* Products Transfer */}

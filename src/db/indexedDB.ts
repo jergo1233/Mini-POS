@@ -59,6 +59,7 @@ export interface TransactionItem {
   price: number; // Unit price frozen at the exact time of purchase
   quantity: number;
   subtotal: number;
+  image?: Blob | string;
 }
 
 export interface Transaction {
@@ -74,6 +75,7 @@ export interface Transaction {
   customerId?: string;
   customerName?: string;
   cashier?: string;
+  status?: 'completed' | 'refunded';
   syncStatus?: 'synced' | 'pending' | 'syncing';
 }
 
@@ -371,6 +373,17 @@ export async function getAllProducts(dbInstance?: IDBDatabase): Promise<Product[
   });
 }
 
+export async function getProduct(id: string, dbInstance?: IDBDatabase): Promise<Product | undefined> {
+  const db = dbInstance || (await openDB());
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('products', 'readonly');
+    const store = tx.objectStore('products');
+    const request = store.get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -447,6 +460,7 @@ export async function saveTransaction(transaction: Transaction): Promise<void> {
   const db = await openDB();
   const txRecord: Transaction = {
     ...transaction,
+    status: transaction.status || 'completed',
     syncStatus: transaction.syncStatus || 'pending',
   };
 
@@ -504,6 +518,83 @@ export async function saveTransaction(transaction: Transaction): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+/**
+ * Process a refund for a transaction.
+ * 1. Mark transaction as refunded.
+ * 2. Return quantities to product stock.
+ * 3. Log stock movements.
+ */
+export async function processRefund(
+  transactionId: string,
+  user: string,
+  role: 'admin' | 'cashier'
+): Promise<void> {
+  const db = await openDB();
+  
+  // 1. Get the transaction
+  const txs = await getAllTransactions();
+  const transaction = txs.find(t => t.id === transactionId);
+
+  if (!transaction) throw new Error('Transaction not found');
+  if (transaction.status === 'refunded') throw new Error('Transaction already refunded');
+
+  // 2. Mark as refunded
+  const updatedTx: Transaction = { 
+    ...transaction, 
+    status: 'refunded', 
+    syncStatus: 'pending' 
+  };
+  
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('transactions', 'readwrite');
+    const store = tx.objectStore('transactions');
+    const req = store.put(updatedTx);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+
+  // 3. Return items to stock and log movements
+  for (const item of transaction.items) {
+    const product = await getProduct(item.productId, db);
+    if (product) {
+      const stockBefore = product.stock;
+      const stockAfter = stockBefore + item.quantity;
+      
+      const updatedProduct: Product = {
+        ...product,
+        stock: stockAfter,
+        updatedAt: new Date().toISOString(),
+        syncStatus: 'pending'
+      };
+      await saveProduct(updatedProduct, db);
+
+      const movementId = `sm-refund-${transaction.id}-${item.productId}-${Math.random().toString(36).slice(2, 6)}`;
+      const movement: StockMovement = {
+        id: movementId,
+        productId: item.productId,
+        productName: item.name,
+        quantityChange: item.quantity,
+        type: 'return',
+        user,
+        role,
+        timestamp: new Date().toISOString(),
+        syncStatus: 'pending',
+        referenceId: transaction.receiptNo,
+        stockBefore,
+        stockAfter,
+      };
+      
+      await new Promise<void>((resolve, reject) => {
+        const moveTx = db.transaction('stock_movements', 'readwrite');
+        const store = moveTx.objectStore('stock_movements');
+        const req = store.put(movement);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+  }
 }
 
 // --- Stock Movements ---

@@ -241,6 +241,7 @@ export const POSView: React.FC<POSViewProps> = ({
       price: item.product.price,
       quantity: item.quantity,
       subtotal: item.product.price * item.quantity,
+      image: item.product.image,
     }));
 
     const selectedCust = customers.find(c => c.id === selectedCustomerId);
@@ -654,18 +655,6 @@ export const POSView: React.FC<POSViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Backup & Transfer Shortcut */}
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent('pos-navigate', { detail: 'backup' }))}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] border border-indigo-200/50 dark:border-indigo-800/50 transition cursor-pointer shadow-2xs"
-                title="Backup & Transfer (Including Pictures)"
-              >
-                <Database className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span className="hidden sm:inline">Backup & Transfer</span>
-                <span className="sm:hidden text-[9px]">Backup</span>
-              </button>
-
               {cart.length > 0 && (
                 <button
                   onClick={resetCart}
@@ -1001,7 +990,7 @@ export const POSView: React.FC<POSViewProps> = ({
                   required
                   value={custName}
                   onChange={(e) => setCustName(e.target.value)}
-                  placeholder="e.g. Juan Dela Cruz"
+                  placeholder="e.g. John Doe"
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1011,7 +1000,7 @@ export const POSView: React.FC<POSViewProps> = ({
                   type="text"
                   value={custContact}
                   onChange={(e) => setCustContact(e.target.value)}
-                  placeholder="e.g. 09123456789"
+                  placeholder="e.g. +1 234 567 890"
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1021,7 +1010,7 @@ export const POSView: React.FC<POSViewProps> = ({
                   type="text"
                   value={custAddress}
                   onChange={(e) => setCustAddress(e.target.value)}
-                  placeholder="e.g. Manila, Philippines"
+                  placeholder="e.g. Universal City, Country"
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
