@@ -20,7 +20,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   userRole = 'admin',
   pendingBadgeCount = 0,
 }) => {
-  const isMoreActive = ['inventory', 'sales', 'reports', 'customers', 'settings', 'cashiers'].includes(currentTab);
+  const isMoreActive = ['inventory', 'sales', 'reports', 'customers', 'settings', 'cashiers', 'backup'].includes(currentTab);
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-around py-2 px-2 shadow-lg transition-colors">
@@ -56,13 +56,13 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         </button>
       ) : (
         <button
-          onClick={() => onSelectTab('sales')}
+          onClick={() => onSelectTab('backup')}
           className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition ${
-            currentTab === 'sales' ? 'text-blue-600 font-semibold' : 'text-slate-500 hover:text-slate-900'
+            currentTab === 'backup' ? 'text-blue-600 font-semibold' : 'text-slate-500 hover:text-slate-900'
           }`}
         >
-          <ReceiptText className="w-5 h-5" />
-          <span className="text-[10px]">Sales</span>
+          <Package className="w-5 h-5" />
+          <span className="text-[10px]">Backup</span>
         </button>
       )}
 

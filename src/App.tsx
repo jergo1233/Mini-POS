@@ -229,7 +229,7 @@ export default function App() {
   // Enforce role-based tab restrictions
   useEffect(() => {
     if (currentSession?.role === 'cashier') {
-      const allowedTabs: TabType[] = ['pos', 'sales', 'dashboard', 'customers'];
+      const allowedTabs: TabType[] = ['pos', 'sales', 'dashboard', 'customers', 'backup'];
       if (!allowedTabs.includes(currentTab)) {
         setCurrentTab('pos');
       }
@@ -312,6 +312,8 @@ export default function App() {
                   ? 'POS Terminal'
                   : currentTab === 'cashiers'
                   ? 'Cashier Access'
+                  : currentTab === 'backup'
+                  ? 'Backup & Data Transfer'
                   : currentTab.replace('-', ' ')}
               </span>
               <div className="md:hidden text-[10px] text-slate-500 font-medium truncate max-w-[140px]">

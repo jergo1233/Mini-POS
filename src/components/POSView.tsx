@@ -19,7 +19,8 @@ import {
   Sparkles,
   Users,
   X,
-  Printer
+  Printer,
+  Database
 } from 'lucide-react';
 import { Product, Category, CartItem, Settings, Transaction, TransactionItem, saveTransaction, Customer, saveCustomer } from '../db/indexedDB';
 import { CameraScannerModal } from './CameraScannerModal';
@@ -652,14 +653,28 @@ export const POSView: React.FC<POSViewProps> = ({
               </div>
             </div>
 
-            {cart.length > 0 && (
+            <div className="flex items-center gap-2">
+              {/* Backup & Transfer Shortcut */}
               <button
-                onClick={resetCart}
-                className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline px-2 py-1 rounded-lg"
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('pos-navigate', { detail: 'backup' }))}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-[10px] border border-indigo-200/50 dark:border-indigo-800/50 transition cursor-pointer shadow-2xs"
+                title="Backup & Transfer (Including Pictures)"
               >
-                Clear Cart
+                <Database className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span className="hidden sm:inline">Backup & Transfer</span>
+                <span className="sm:hidden text-[9px]">Backup</span>
               </button>
-            )}
+
+              {cart.length > 0 && (
+                <button
+                  onClick={resetCart}
+                  className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline px-2 py-1 rounded-lg"
+                >
+                  Clear Cart
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Customer Selection & Add Customer Bar */}

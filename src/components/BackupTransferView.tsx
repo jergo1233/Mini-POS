@@ -377,7 +377,7 @@ export const BackupTransferView: React.FC<BackupTransferViewProps> = ({
               <Upload className="w-6 h-6" />
             </div>
             <span className="font-bold text-sm text-slate-900 dark:text-white">Import ZIP / JSON</span>
-            <span className="text-[10px] text-slate-500 mt-1">Receive products or sales files</span>
+            <span className="text-[10px] text-slate-500 mt-1">Products, Sales + Photos</span>
             <input
               type="file"
               accept=".zip,.json"
