@@ -92,14 +92,15 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     try {
+      const activeStoreId = currentSession?.storeId || 'store-main';
       await seedInitialData();
       const [prods, cats, txs, custs, sets, cashList, reqList] = await Promise.all([
-        getAllProducts(),
+        getAllProducts(activeStoreId),
         getAllCategories(),
-        getAllTransactions(),
+        getAllTransactions(activeStoreId),
         getAllCustomers(),
-        getSettings(),
-        getAllCashiers(),
+        getSettings(activeStoreId),
+        getAllCashiers(activeStoreId),
         getAllResetRequests(),
       ]);
 
@@ -115,7 +116,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentSession?.storeId]);
 
   useEffect(() => {
     loadData();

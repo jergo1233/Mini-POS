@@ -8,10 +8,26 @@
 const DB_NAME = 'MiniUniversalPOS';
 const DB_VERSION = 5;
 
+export interface StoreAccount {
+  id: string; // e.g. 'store-main', 'store-1728320400000'
+  storeName: string;
+  ownerName: string;
+  storeAddress?: string;
+  storeContact?: string;
+  adminPinHash?: string;
+  adminPinSalt?: string;
+  recoveryCodeHash?: string;
+  recoveryCodeSalt?: string;
+  recoveryCodeCreatedAt?: string;
+  createdAt: string;
+  isSetup: boolean;
+}
+
 export interface Category {
   id: string;
   name: string;
   description?: string;
+  storeId?: string;
 }
 
 export type ProductHistoryAction = 'add' | 'edit' | 'delete' | 'restock';
@@ -30,6 +46,7 @@ export interface ProductHistoryLog {
   stockAdded?: number;
   oldPrice?: number;
   newPrice?: number;
+  storeId?: string;
 }
 
 export interface Product {
@@ -46,6 +63,7 @@ export interface Product {
   createdAt: string;
   updatedAt: string;
   syncStatus?: 'synced' | 'pending' | 'syncing';
+  storeId?: string;
 }
 
 export interface CartItem {
@@ -77,6 +95,7 @@ export interface Transaction {
   cashier?: string;
   status?: 'completed' | 'refunded';
   syncStatus?: 'synced' | 'pending' | 'syncing';
+  storeId?: string;
 }
 
 export interface Customer {
@@ -86,6 +105,7 @@ export interface Customer {
   address: string;
   description?: string;
   createdAt: string;
+  storeId?: string;
 }
 
 export type StockMovementType = 'restock' | 'sale' | 'adjustment' | 'return' | 'initial';
@@ -103,6 +123,7 @@ export interface StockMovement {
   referenceId?: string; // receiptNo or adjustment memo
   stockBefore?: number;
   stockAfter?: number;
+  storeId?: string;
 }
 
 export interface Cashier {
@@ -114,6 +135,7 @@ export interface Cashier {
   createdAt: string;
   updatedAt: string;
   lastLogin?: string;
+  storeId?: string;
 }
 
 export interface CashierResetRequest {
@@ -126,9 +148,11 @@ export interface CashierResetRequest {
   temporaryPin?: string;
   syncStatus: 'synced' | 'pending' | 'syncing';
   notes?: string;
+  storeId?: string;
 }
 
 export interface Settings {
+  storeId?: string;
   storeName: string;
   storeAddress: string;
   storeContact: string;
@@ -362,13 +386,19 @@ export async function deleteCategory(id: string): Promise<void> {
 }
 
 // --- Products ---
-export async function getAllProducts(dbInstance?: IDBDatabase): Promise<Product[]> {
+export async function getAllProducts(storeId?: string, dbInstance?: IDBDatabase): Promise<Product[]> {
   const db = dbInstance || (await openDB());
   return new Promise((resolve, reject) => {
     const tx = db.transaction('products', 'readonly');
     const store = tx.objectStore('products');
     const request = store.getAll();
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      let list = (request.result || []) as Product[];
+      if (storeId) {
+        list = list.filter((p) => !p.storeId || p.storeId === storeId || (storeId === 'store-main' && !p.storeId));
+      }
+      resolve(list);
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -435,15 +465,18 @@ export async function generateUniqueBarcode(): Promise<string> {
 }
 
 // --- Transactions & Stock Movements ---
-export async function getAllTransactions(): Promise<Transaction[]> {
+export async function getAllTransactions(storeId?: string): Promise<Transaction[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('transactions', 'readonly');
     const store = tx.objectStore('transactions');
     const request = store.getAll();
     request.onsuccess = () => {
-      // Sort newest first
-      const results = (request.result || []).sort(
+      let results = (request.result || []) as Transaction[];
+      if (storeId) {
+        results = results.filter((t) => !t.storeId || t.storeId === storeId || (storeId === 'store-main' && !t.storeId));
+      }
+      results.sort(
         (a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime()
       );
       resolve(results);
@@ -661,7 +694,7 @@ export async function saveRawStockMovement(movement: StockMovement, dbInstance?:
 }
 
 // --- Cashiers ---
-export async function getAllCashiers(dbInstance?: IDBDatabase): Promise<Cashier[]> {
+export async function getAllCashiers(storeId?: string, dbInstance?: IDBDatabase): Promise<Cashier[]> {
   try {
     const db = dbInstance || (await openDB());
     if (!db.objectStoreNames.contains('cashiers')) return [];
@@ -669,7 +702,13 @@ export async function getAllCashiers(dbInstance?: IDBDatabase): Promise<Cashier[
       const tx = db.transaction('cashiers', 'readonly');
       const store = tx.objectStore('cashiers');
       const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
+      req.onsuccess = () => {
+        let list = (req.result || []) as Cashier[];
+        if (storeId) {
+          list = list.filter((c) => !c.storeId || c.storeId === storeId || (storeId === 'store-main' && !c.storeId));
+        }
+        resolve(list);
+      };
       req.onerror = () => resolve([]);
     });
   } catch (err) {
@@ -886,28 +925,147 @@ export async function deleteCustomer(id: string): Promise<void> {
   });
 }
 
-// --- Settings ---
-export async function getSettings(dbInstance?: IDBDatabase): Promise<Settings> {
+// --- Store Accounts ---
+export async function getAllStoreAccounts(dbInstance?: IDBDatabase): Promise<StoreAccount[]> {
   const db = dbInstance || (await openDB());
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction('settings', 'readonly');
+      const store = tx.objectStore('settings');
+      const req = store.get('app_stores_list');
+      req.onsuccess = () => {
+        let list: StoreAccount[] = req.result ? req.result.value : [];
+        if (!Array.isArray(list) || list.length === 0) {
+          const settingsReq = store.get('app_settings');
+          settingsReq.onsuccess = () => {
+            const currentSets: Settings = settingsReq.result ? settingsReq.result.value : null;
+            if (currentSets && currentSets.isSetup) {
+              const defaultAccount: StoreAccount = {
+                id: currentSets.storeId || 'store-main',
+                storeName: currentSets.storeName || 'Main Store Account',
+                ownerName: currentSets.ownerName || 'Store Admin',
+                storeAddress: currentSets.storeAddress,
+                storeContact: currentSets.storeContact,
+                adminPinHash: currentSets.adminPinHash,
+                adminPinSalt: currentSets.adminPinSalt,
+                recoveryCodeHash: currentSets.recoveryCodeHash,
+                recoveryCodeSalt: currentSets.recoveryCodeSalt,
+                recoveryCodeCreatedAt: currentSets.recoveryCodeCreatedAt,
+                createdAt: new Date().toISOString(),
+                isSetup: true,
+              };
+              list = [defaultAccount];
+              saveStoreAccountsList(list, db);
+            } else {
+              list = [];
+            }
+            resolve(list);
+          };
+          settingsReq.onerror = () => resolve([]);
+        } else {
+          resolve(list);
+        }
+      };
+      req.onerror = () => resolve([]);
+    } catch {
+      resolve([]);
+    }
+  });
+}
+
+export async function saveStoreAccountsList(accounts: StoreAccount[], dbInstance?: IDBDatabase): Promise<void> {
+  const db = dbInstance || (await openDB());
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('settings', 'readwrite');
+    const store = tx.objectStore('settings');
+    const req = store.put({ key: 'app_stores_list', value: accounts });
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function saveStoreAccount(account: StoreAccount, dbInstance?: IDBDatabase): Promise<void> {
+  const accounts = await getAllStoreAccounts(dbInstance);
+  const idx = accounts.findIndex((a) => a.id === account.id);
+  if (idx >= 0) {
+    accounts[idx] = account;
+  } else {
+    accounts.push(account);
+  }
+  await saveStoreAccountsList(accounts, dbInstance);
+}
+
+export async function deleteStoreAccount(id: string): Promise<void> {
+  const accounts = await getAllStoreAccounts();
+  const updated = accounts.filter((a) => a.id !== id);
+  await saveStoreAccountsList(updated);
+}
+
+// --- Settings ---
+export async function getSettings(storeId?: string, dbInstance?: IDBDatabase): Promise<Settings> {
+  const db = dbInstance || (await openDB());
+  const targetKey = storeId ? `app_settings_${storeId}` : 'app_settings';
   return new Promise((resolve, reject) => {
     const tx = db.transaction('settings', 'readonly');
     const store = tx.objectStore('settings');
-    const request = store.get('app_settings');
+    const request = store.get(targetKey);
     request.onsuccess = () => {
-      resolve(request.result ? request.result.value : DEFAULT_SETTINGS);
+      if (request.result && request.result.value) {
+        resolve({ ...DEFAULT_SETTINGS, ...request.result.value, storeId: storeId || request.result.value.storeId || 'store-main' });
+      } else {
+        const fallbackReq = store.get('app_settings');
+        fallbackReq.onsuccess = () => {
+          if (fallbackReq.result && fallbackReq.result.value) {
+            resolve({ ...DEFAULT_SETTINGS, ...fallbackReq.result.value, storeId: storeId || fallbackReq.result.value.storeId || 'store-main' });
+          } else {
+            resolve({ ...DEFAULT_SETTINGS, storeId: storeId || 'store-main' });
+          }
+        };
+        fallbackReq.onerror = () => resolve({ ...DEFAULT_SETTINGS, storeId: storeId || 'store-main' });
+      }
     };
     request.onerror = () => reject(request.error);
   });
 }
 
-export async function saveSettings(settings: Settings, dbInstance?: IDBDatabase): Promise<void> {
+export async function saveSettings(settings: Settings, storeId?: string, dbInstance?: IDBDatabase): Promise<void> {
   const db = dbInstance || (await openDB());
+  const targetStoreId = storeId || settings.storeId || 'store-main';
+  const targetKey = `app_settings_${targetStoreId}`;
+  const updatedSettings: Settings = { ...settings, storeId: targetStoreId };
+
   return new Promise((resolve, reject) => {
     const tx = db.transaction('settings', 'readwrite');
     const store = tx.objectStore('settings');
-    const request = store.put({ key: 'app_settings', value: settings });
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    
+    store.put({ key: targetKey, value: updatedSettings });
+    if (targetStoreId === 'store-main') {
+      store.put({ key: 'app_settings', value: updatedSettings });
+    }
+
+    tx.oncomplete = async () => {
+      try {
+        const storeAccount: StoreAccount = {
+          id: targetStoreId,
+          storeName: settings.storeName || 'Store Account',
+          ownerName: settings.ownerName || 'Store Admin',
+          storeAddress: settings.storeAddress,
+          storeContact: settings.storeContact,
+          adminPinHash: settings.adminPinHash,
+          adminPinSalt: settings.adminPinSalt,
+          recoveryCodeHash: settings.recoveryCodeHash,
+          recoveryCodeSalt: settings.recoveryCodeSalt,
+          recoveryCodeCreatedAt: settings.recoveryCodeCreatedAt,
+          createdAt: new Date().toISOString(),
+          isSetup: settings.isSetup ?? true,
+        };
+        await saveStoreAccount(storeAccount, db);
+      } catch (e) {
+        console.warn('Syncing store account summary failed:', e);
+      }
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
   });
 }
 
