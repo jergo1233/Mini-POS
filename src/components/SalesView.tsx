@@ -36,8 +36,14 @@ export const SalesView: React.FC<SalesViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [cashierFilter, setCashierFilter] = useState('all');
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [syncFilter, setSyncFilter] = useState<'all' | 'synced' | 'pending' | 'refunded'>('all');
+
+  // Unique cashier names list for filter dropdown
+  const uniqueCashiers = Array.from(
+    new Set(transactions.map((t) => t.cashier || settings.ownerName || 'Admin / Owner'))
+  ).filter(Boolean);
 
   // If cashier and not allowed to view all sales, show their own transactions
   const roleFilteredTransactions =
@@ -52,12 +58,14 @@ export const SalesView: React.FC<SalesViewProps> = ({
       (tx.customerName && tx.customerName.toLowerCase().includes(q)) ||
       (tx.cashier && tx.cashier.toLowerCase().includes(q));
     const matchesDate = !dateFilter || tx.date.startsWith(dateFilter);
+    const txCashierName = tx.cashier || settings.ownerName || 'Admin / Owner';
+    const matchesCashier = cashierFilter === 'all' || txCashierName === cashierFilter;
     const matchesSync =
       syncFilter === 'all' ||
       (syncFilter === 'pending' && tx.syncStatus === 'pending') ||
       (syncFilter === 'refunded' && tx.status === 'refunded') ||
       (syncFilter === 'synced' && tx.syncStatus !== 'pending' && tx.status !== 'refunded');
-    return matchesQ && matchesDate && matchesSync;
+    return matchesQ && matchesDate && matchesCashier && matchesSync;
   });
 
   const exportExcel = () => {
@@ -168,6 +176,19 @@ export const SalesView: React.FC<SalesViewProps> = ({
               className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer"
             />
           </div>
+
+          <select
+            value={cashierFilter}
+            onChange={(e) => setCashierFilter(e.target.value)}
+            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-hidden"
+          >
+            <option value="all">All Cashiers</option>
+            {uniqueCashiers.map((c) => (
+              <option key={c} value={c}>
+                👤 {c}
+              </option>
+            ))}
+          </select>
 
           <select
             value={syncFilter}

@@ -8,7 +8,9 @@ import {
   ShoppingBag,
   DollarSign,
   FileSpreadsheet,
-  Calendar
+  Calendar,
+  User,
+  X
 } from 'lucide-react';
 import { Transaction, Product, Settings } from '../db/indexedDB';
 import * as XLSX from 'xlsx';
@@ -23,12 +25,31 @@ type TimeFilter = 'today' | '7days' | 'month' | 'year' | 'all';
 
 export const ReportsView: React.FC<ReportsViewProps> = ({ transactions, products, settings }) => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [selectedCashier, setSelectedCashier] = useState<string>('all');
+  const [customDate, setCustomDate] = useState<string>('');
 
-  // Filter transactions based on timeFilter
+  // Extract list of all unique cashiers who processed sales
+  const uniqueCashiers = Array.from(
+    new Set(transactions.map((t) => t.cashier || settings.ownerName || 'Admin / Owner'))
+  ).filter(Boolean);
+
+  // Filter transactions based on timeFilter, selectedCashier, and customDate
   const now = new Date();
   const filteredTransactions = transactions.filter(t => {
     const txDate = new Date(t.date);
     const todayStr = now.toISOString().split('T')[0];
+
+    // Check cashier match
+    const cName = t.cashier || settings.ownerName || 'Admin / Owner';
+    if (selectedCashier !== 'all' && cName !== selectedCashier) {
+      return false;
+    }
+
+    // Check custom date if chosen
+    if (customDate) {
+      return t.date.startsWith(customDate);
+    }
+
     if (timeFilter === 'today') {
       return t.date.startsWith(todayStr);
     } else if (timeFilter === '7days') {
@@ -143,62 +164,122 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ transactions, products
         </div>
       </div>
 
-      {/* Time Filter Segmented Control */}
-      <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs w-fit">
-        <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-400">
-          <Calendar className="w-4 h-4" />
-          <span>Period:</span>
+      {/* Filter Control Bar: Period, Specific Date & Cashier Selection */}
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+        {/* Period Buttons */}
+        <div className="flex flex-wrap items-center gap-1">
+          <div className="flex items-center gap-1.5 px-2 py-1 text-xs font-semibold text-slate-400">
+            <Calendar className="w-4 h-4" />
+            <span>Period:</span>
+          </div>
+          <button
+            onClick={() => {
+              setTimeFilter('today');
+              setCustomDate('');
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+              timeFilter === 'today' && !customDate
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => {
+              setTimeFilter('7days');
+              setCustomDate('');
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+              timeFilter === '7days' && !customDate
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            Last 7 Days
+          </button>
+          <button
+            onClick={() => {
+              setTimeFilter('month');
+              setCustomDate('');
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+              timeFilter === 'month' && !customDate
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            This Month
+          </button>
+          <button
+            onClick={() => {
+              setTimeFilter('year');
+              setCustomDate('');
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+              timeFilter === 'year' && !customDate
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            This Year
+          </button>
+          <button
+            onClick={() => {
+              setTimeFilter('all');
+              setCustomDate('');
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+              timeFilter === 'all' && !customDate
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            All Time
+          </button>
         </div>
-        <button
-          onClick={() => setTimeFilter('today')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-            timeFilter === 'today'
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          Today
-        </button>
-        <button
-          onClick={() => setTimeFilter('7days')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-            timeFilter === '7days'
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          Last 7 Days
-        </button>
-        <button
-          onClick={() => setTimeFilter('month')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-            timeFilter === 'month'
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          This Month
-        </button>
-        <button
-          onClick={() => setTimeFilter('year')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-            timeFilter === 'year'
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          This Year
-        </button>
-        <button
-          onClick={() => setTimeFilter('all')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
-            timeFilter === 'all'
-              ? 'bg-blue-600 text-white shadow-sm'
-              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          All Time
-        </button>
+
+        {/* Specific Date & Cashier Selectors */}
+        <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+          {/* Specific Day Picker */}
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+            <span className="text-slate-400 font-semibold">Specific Day:</span>
+            <input
+              type="date"
+              value={customDate}
+              onChange={(e) => setCustomDate(e.target.value)}
+              className="bg-transparent text-slate-900 dark:text-white font-medium focus:outline-hidden cursor-pointer"
+            />
+            {customDate && (
+              <button
+                type="button"
+                onClick={() => setCustomDate('')}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                title="Clear date filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Cashier Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+            <User className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-slate-400 font-semibold">Cashier:</span>
+            <select
+              value={selectedCashier}
+              onChange={(e) => setSelectedCashier(e.target.value)}
+              className="bg-transparent text-slate-900 dark:text-white font-bold focus:outline-hidden cursor-pointer"
+            >
+              <option value="all" className="dark:bg-slate-900">All Cashiers</option>
+              {uniqueCashiers.map((c) => (
+                <option key={c} value={c} className="dark:bg-slate-900">
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Metric Cards */}
