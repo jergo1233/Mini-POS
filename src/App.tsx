@@ -412,6 +412,8 @@ export default function App() {
             <CashierManagementView
               cashiers={cashiers}
               resetRequests={resetRequests}
+              transactions={transactions}
+              settings={settings}
               onRefresh={loadData}
               isOnline={true}
             />

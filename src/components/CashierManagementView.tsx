@@ -20,6 +20,8 @@ import {
 import {
   Cashier,
   CashierResetRequest,
+  Transaction,
+  Settings,
   saveCashier,
   deleteCashier,
   saveResetRequest,
@@ -29,6 +31,8 @@ import {
 interface CashierManagementViewProps {
   cashiers: Cashier[];
   resetRequests: CashierResetRequest[];
+  transactions?: Transaction[];
+  settings?: Settings;
   onRefresh: () => void;
   isOnline: boolean;
   onTriggerSync?: () => Promise<boolean>;
@@ -37,6 +41,8 @@ interface CashierManagementViewProps {
 export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
   cashiers,
   resetRequests,
+  transactions = [],
+  settings,
   onRefresh,
   isOnline,
   onTriggerSync,
@@ -333,38 +339,53 @@ export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
                 <th className="px-6 py-3.5">Cashier Name</th>
                 <th className="px-6 py-3.5">Security PIN</th>
                 <th className="px-6 py-3.5">Status</th>
-                <th className="px-6 py-3.5">Role</th>
+                <th className="px-6 py-3.5">Sales Rating & Performance</th>
                 <th className="px-6 py-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {cashiers.map((cashier) => (
-                <tr key={cashier.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                  <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">
-                    {cashier.name}
-                  </td>
-                  <td className="px-6 py-4 font-mono text-xs">
-                    •••• <span className="text-[10px] text-slate-400">({cashier.pin.length} digits)</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        cashier.active
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                      }`}
-                    >
+              {cashiers.map((cashier) => {
+                // Compute cashier stats
+                const cashierTxs = transactions.filter(t => t.cashier === cashier.name);
+                const totalSales = cashierTxs.reduce((sum, t) => sum + t.total, 0);
+                const orderCount = cashierTxs.length;
+                const stars = orderCount >= 20 ? '⭐⭐⭐⭐⭐' : orderCount >= 10 ? '⭐⭐⭐⭐' : orderCount >= 5 ? '⭐⭐⭐' : orderCount >= 1 ? '⭐⭐' : '⭐';
+
+                return (
+                  <tr key={cashier.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                    <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">
+                      {cashier.name}
+                    </td>
+                    <td className="px-6 py-4 font-mono text-xs">
+                      •••• <span className="text-[10px] text-slate-400">({cashier.pin.length} digits)</span>
+                    </td>
+                    <td className="px-6 py-4">
                       <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          cashier.active ? 'bg-emerald-500' : 'bg-slate-400'
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          cashier.active
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                         }`}
-                      />
-                      {cashier.active ? 'Active' : 'Disabled'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-xs font-medium text-slate-500">
-                    POS Cashier (Restricted)
-                  </td>
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            cashier.active ? 'bg-emerald-500' : 'bg-slate-400'
+                          }`}
+                        />
+                        {cashier.active ? 'Active' : 'Disabled'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-amber-500">{stars}</span>
+                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                          ({settings?.currency || '₱'}{totalSales.toFixed(2)})
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {orderCount} total orders processed
+                      </div>
+                    </td>
                   <td className="px-6 py-4 text-right space-x-2">
                     <button
                       type="button"
@@ -399,7 +420,8 @@ export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
                     </button>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
             </tbody>
           </table>
         </div>

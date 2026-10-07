@@ -1,7 +1,7 @@
 /**
  * Dashboard View Component
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ShoppingCart,
   TrendingUp,
@@ -11,7 +11,10 @@ import {
   ShieldCheck,
   User,
   Boxes,
-  ReceiptText
+  ReceiptText,
+  Award,
+  Users,
+  Calendar
 } from 'lucide-react';
 import { Product, Transaction, Settings } from '../db/indexedDB';
 import { TabType } from './Sidebar';
@@ -34,6 +37,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   userName,
 }) => {
   const isCashier = userRole === 'cashier';
+  const [dashboardTimeFilter, setDashboardTimeFilter] = useState<'today' | '7days' | 'month'>('today');
 
   // Compute metrics (if cashier and restricted, filter to their shift)
   const todayStr = new Date().toISOString().split('T')[0];
@@ -49,6 +53,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const lowStockProducts = products.filter((p) => p.stock <= settings.lowStockThreshold);
 
   const totalRevenue = relevantTransactions.reduce((sum, t) => sum + t.total, 0);
+
+  // Cashier ratings calculations for Dashboard
+  const now = new Date();
+  const filteredForRatings = transactions.filter(t => {
+    const txDate = new Date(t.date);
+    if (dashboardTimeFilter === 'today') {
+      return t.date.startsWith(todayStr);
+    } else if (dashboardTimeFilter === '7days') {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      return txDate >= sevenDaysAgo;
+    } else if (dashboardTimeFilter === 'month') {
+      return txDate.getMonth() === now.getMonth() && txDate.getFullYear() === now.getFullYear();
+    }
+    return true;
+  });
+
+  const cashierSalesMap: { [name: string]: { qty: number; revenue: number; txCount: number } } = {};
+  filteredForRatings.forEach(tx => {
+    const cName = tx.cashier || settings.ownerName || 'Admin / Owner';
+    if (!cashierSalesMap[cName]) {
+      cashierSalesMap[cName] = { qty: 0, revenue: 0, txCount: 0 };
+    }
+    const qty = tx.items?.reduce((sum, item) => sum + item.quantity, 0) || 0;
+    cashierSalesMap[cName].qty += qty;
+    cashierSalesMap[cName].revenue += tx.total;
+    cashierSalesMap[cName].txCount += 1;
+  });
+
+  const dashboardCashierLeaderboard = Object.entries(cashierSalesMap)
+    .map(([name, data]) => ({ name, ...data }))
+    .sort((a, b) => b.revenue - a.revenue);
 
   return (
     <div className="space-y-6 pb-20 md:pb-6">
@@ -146,6 +182,119 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Cashier Performance & Ratings Leaderboard */}
+      {!isCashier && (
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
+                <Award className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Cashier Performance & Ratings</span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-xs font-bold">
+                    🏆 Admin View
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Real-time sales ratings, rankings, and transaction activity for counter staff
+                </p>
+              </div>
+            </div>
+
+            {/* Time period filter buttons */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-medium self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setDashboardTimeFilter('today')}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  dashboardTimeFilter === 'today'
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                Today (1D)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardTimeFilter('7days')}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  dashboardTimeFilter === '7days'
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                7 Days
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardTimeFilter('month')}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  dashboardTimeFilter === 'month'
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                This Month
+              </button>
+            </div>
+          </div>
+
+          {dashboardCashierLeaderboard.length === 0 ? (
+            <div className="text-center py-6 text-slate-400 text-xs">
+              No sales transactions recorded for this selected time period.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {dashboardCashierLeaderboard.map((c, index) => {
+                const stars = index === 0 ? '⭐⭐⭐⭐⭐' : index === 1 ? '⭐⭐⭐⭐' : index === 2 ? '⭐⭐⭐' : '⭐⭐';
+                const rankBadge = index === 0 ? '🥇 #1 Top Sales' : index === 1 ? '🥈 #2 Runner Up' : index === 2 ? '🥉 #3 Top Performer' : `#${index + 1} Cashier`;
+                return (
+                  <div
+                    key={c.name}
+                    className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                          {c.name}
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          index === 0 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
+                          index === 1 ? 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-300' :
+                          'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                        }`}>
+                          {rankBadge}
+                        </span>
+                      </div>
+                      <div className="text-xs text-amber-500 font-bold tracking-wider">
+                        {stars}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {c.txCount} transactions ({c.qty} items)
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                        {settings.currency}{c.revenue.toFixed(2)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('reports')}
+                        className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline mt-1 font-semibold"
+                      >
+                        View Details →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quick Access Action Shortcuts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
