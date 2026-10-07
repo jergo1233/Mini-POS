@@ -73,6 +73,7 @@ export const CashierManagementView: React.FC<CashierManagementViewProps> = ({
       pin: newCashierPin.trim(),
       role: 'cashier',
       active: true,
+      storeId: settings?.storeId || 'store-main',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

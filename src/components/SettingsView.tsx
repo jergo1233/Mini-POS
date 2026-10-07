@@ -36,6 +36,8 @@ import {
 } from 'lucide-react';
 import {
   Settings,
+  StoreAccount,
+  getAllStoreAccounts,
   getSettings,
   saveSettings,
   getAllProducts,
@@ -104,6 +106,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [codeCopied, setCodeCopied] = useState(false);
   const [codeConfirmedSaved, setCodeConfirmedSaved] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [storeAccountsList, setStoreAccountsList] = useState<StoreAccount[]>([]);
+
+  useEffect(() => {
+    getAllStoreAccounts().then((list) => setStoreAccountsList(list));
+  }, []);
 
   const handleGenerateRecoveryCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -654,6 +661,80 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <span className="text-sm font-medium">{exportSuccessMessage}</span>
         </div>
       )}
+
+      {/* Store Accounts & Branches Overview */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+              <Store className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-white text-base">Registered Store Branches</h3>
+              <p className="text-xs text-slate-500">
+                Multi-Store accounts with independent credentials • 100% Offline
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('pos-switch-store', { detail: '__add_new__' }))}
+            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto"
+          >
+            <span>+ Register New Store Branch</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {storeAccountsList.map((account) => {
+            const isActive = account.id === (settings.storeId || 'store-main');
+            return (
+              <div
+                key={account.id}
+                className={`p-4 rounded-xl border transition flex flex-col justify-between gap-3 ${
+                  isActive
+                    ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-900 dark:text-white text-sm">
+                        {account.storeName || 'Store Account'}
+                      </span>
+                      {isActive && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
+                          Current Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Owner: <strong className="text-slate-700 dark:text-slate-300">{account.ownerName || 'Admin'}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    ID: {account.id}
+                  </span>
+                  {!isActive && (
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new CustomEvent('pos-switch-store', { detail: account.id }))}
+                      className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 text-[11px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer shadow-2xs"
+                    >
+                      Switch to This Branch
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Store Settings Form */}
       <div className="rounded-2xl bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 shadow-xs">

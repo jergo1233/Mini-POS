@@ -5,6 +5,7 @@ import {
   ShieldCheck,
   Database,
   User,
+  Store,
 } from 'lucide-react';
 import { AuthSession } from './LoginScreen';
 
@@ -31,6 +32,14 @@ export const SyncStatusHeader: React.FC<SyncStatusHeaderProps> = ({
           <span className="text-[10px] opacity-85">• Local DB</span>
         </span>
       </div>
+
+      {/* Active Store Badge */}
+      {currentSession?.storeName && (
+        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60" title={`Active Store: ${currentSession.storeName}`}>
+          <Store className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="max-w-[130px] truncate">{currentSession.storeName}</span>
+        </div>
+      )}
 
       {/* Current User Session Pill */}
       {currentSession && (

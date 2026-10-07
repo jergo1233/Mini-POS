@@ -28,8 +28,10 @@ import {
   Cashier,
   Settings,
   StoreAccount,
+  DEFAULT_SETTINGS,
   getAllCashiers,
   getAllStoreAccounts,
+  saveStoreAccount,
   getSettings,
   saveSettings,
   saveResetRequest,
@@ -125,12 +127,44 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   }, [lockoutRemainingSecs]);
 
   // Load all registered store accounts
-  const loadStoreAccounts = async () => {
+  const loadStoreAccounts = async (preferredStoreId?: string) => {
+    let prefId = preferredStoreId;
+    try {
+      const storedPref = localStorage.getItem('pos_preferred_store_id');
+      if (storedPref) {
+        prefId = storedPref;
+        localStorage.removeItem('pos_preferred_store_id');
+      }
+    } catch {}
+
+    if (prefId === '__add_new__') {
+      setIsRegisteringNewStore(true);
+      setSetupStep('form');
+      setSetupStoreName('');
+      setSetupOwnerName('');
+      setSetupPin('');
+      setSetupConfirmPin('');
+      setErrorMsg(null);
+      const list = await getAllStoreAccounts();
+      setStoreAccounts(list);
+      return;
+    }
+
     const list = await getAllStoreAccounts();
     setStoreAccounts(list);
     if (list.length > 0) {
-      const current = selectedStoreId && list.some((s) => s.id === selectedStoreId) ? selectedStoreId : list[0].id;
+      const targetId = prefId || selectedStoreId;
+      const current = targetId && list.some((s) => s.id === targetId) ? targetId : list[0].id;
       setSelectedStoreId(current);
+      const sets = await getSettings(current);
+      setActiveStoreSettings(sets);
+      const cashList = await getAllCashiers(current);
+      setCashiers(cashList);
+      if (cashList.length > 0) {
+        setSelectedCashierId(cashList[0].id);
+      } else {
+        setSelectedCashierId('');
+      }
     } else {
       setIsRegisteringNewStore(true);
     }
@@ -213,10 +247,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     setLoading(true);
     try {
-      const isMatch = await verifyAdminPin(enteredPin, activeStoreSettings);
+      const currentStoreAcc = storeAccounts.find((s) => s.id === selectedStoreId);
+      const authTarget = {
+        adminPin: activeStoreSettings.adminPin,
+        adminPinHash: currentStoreAcc?.adminPinHash || activeStoreSettings.adminPinHash,
+        adminPinSalt: currentStoreAcc?.adminPinSalt || activeStoreSettings.adminPinSalt,
+      };
+
+      const isMatch = await verifyAdminPin(enteredPin, authTarget);
 
       if (!isMatch) {
-        setErrorMsg('Invalid Admin PIN. Please check your PIN or use Forgot Admin PIN.');
+        setErrorMsg(`Incorrect Admin PIN for "${activeStoreSettings.storeName || currentStoreAcc?.storeName || 'Store'}". Please try again.`);
         setLoading(false);
         return;
       }
@@ -224,9 +265,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       onLoginSuccess({
         role: 'admin',
         id: 'admin',
-        name: activeStoreSettings.ownerName || 'Store Administrator',
-        storeId: selectedStoreId || 'store-main',
-        storeName: activeStoreSettings.storeName || 'Store Account',
+        name: activeStoreSettings.ownerName || currentStoreAcc?.ownerName || 'Store Administrator',
+        storeId: selectedStoreId || currentStoreAcc?.id || 'store-main',
+        storeName: activeStoreSettings.storeName || currentStoreAcc?.storeName || 'Store Account',
         loginTime: new Date().toISOString(),
         isOfflineLogin: !isOnline,
       });
@@ -308,7 +349,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       const newStoreId = `store-${Date.now()}`;
 
       const newStoreSettings: Settings = {
-        ...settings,
+        ...DEFAULT_SETTINGS,
         storeId: newStoreId,
         storeName: setupStoreName.trim(),
         ownerName: setupOwnerName.trim(),
@@ -343,7 +384,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       setSetupConfirmedSaved(false);
       setSelectedStoreId(newStoreId);
       setActiveStoreSettings(newStoreSettings);
-      await loadStoreAccounts();
+      await loadStoreAccounts(newStoreId);
     } catch (err) {
       console.error('Failed to complete Admin Setup:', err);
       setErrorMsg('Failed to initialize Store Account credentials. Please try again.');
@@ -458,7 +499,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     setLoading(true);
     try {
-      const isValid = await verifyRecoveryCode(recoveryEnteredCode, activeStoreSettings);
+      const currentStoreAcc = storeAccounts.find((s) => s.id === selectedStoreId);
+      const verifyTarget = {
+        recoveryCodeHash: currentStoreAcc?.recoveryCodeHash || activeStoreSettings.recoveryCodeHash,
+        recoveryCodeSalt: currentStoreAcc?.recoveryCodeSalt || activeStoreSettings.recoveryCodeSalt,
+        recoveryToken: activeStoreSettings.recoveryToken,
+      };
+
+      const isValid = await verifyRecoveryCode(recoveryEnteredCode, verifyTarget);
 
       if (!isValid) {
         const nextAttempts = recoveryFailedAttempts + 1;
@@ -504,21 +552,37 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       // 1. Generate new cryptographic credentials and replace old recovery code
       const newCreds = await createAdminAuthCredentials(recoveryNewPin);
 
-      // 2. Update ONLY authentication records in settings (preserves all products, sales, reports, cashiers)
+      // 2. Update ONLY authentication records in settings for the active store
       const updatedSettings: Settings = {
-        ...settings,
+        ...activeStoreSettings,
+        storeId: selectedStoreId,
         adminPin: recoveryNewPin,
         adminPinHash: newCreds.adminPinHash,
         adminPinSalt: newCreds.adminPinSalt,
         recoveryCodeHash: newCreds.recoveryCodeHash,
         recoveryCodeSalt: newCreds.recoveryCodeSalt,
         recoveryCodeCreatedAt: newCreds.recoveryCodeCreatedAt,
-        recoveryToken: undefined, // Invalidate old legacy token
+        recoveryToken: undefined,
         failedRecoveryAttempts: 0,
         recoveryLockoutUntil: undefined,
       };
 
-      await saveSettings(updatedSettings);
+      await saveSettings(updatedSettings, selectedStoreId);
+      setActiveStoreSettings(updatedSettings);
+
+      const targetStoreAcc = storeAccounts.find((s) => s.id === selectedStoreId);
+      if (targetStoreAcc) {
+        const updatedAcc: StoreAccount = {
+          ...targetStoreAcc,
+          adminPinHash: newCreds.adminPinHash,
+          adminPinSalt: newCreds.adminPinSalt,
+          recoveryCodeHash: newCreds.recoveryCodeHash,
+          recoveryCodeSalt: newCreds.recoveryCodeSalt,
+          recoveryCodeCreatedAt: newCreds.recoveryCodeCreatedAt,
+        };
+        await saveStoreAccount(updatedAcc);
+        await loadStoreAccounts(selectedStoreId);
+      }
 
       setReplacementCode(newCreds.recoveryCode);
       setRecoveryStep('saveReplacement');
@@ -544,8 +608,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const handleDownloadReplacementDocument = () => {
     const content = generateRecoveryCodeDocument(
       replacementCode,
-      settings.storeName,
-      settings.ownerName
+      activeStoreSettings.storeName,
+      activeStoreSettings.ownerName
     );
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -566,8 +630,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
     const docText = generateRecoveryCodeDocument(
       replacementCode,
-      settings.storeName,
-      settings.ownerName
+      activeStoreSettings.storeName,
+      activeStoreSettings.ownerName
     );
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -598,7 +662,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     onLoginSuccess({
       role: 'admin',
       id: 'admin',
-      name: settings.ownerName || 'Store Administrator',
+      name: activeStoreSettings.ownerName || 'Store Administrator',
+      storeId: selectedStoreId || 'store-main',
+      storeName: activeStoreSettings.storeName || 'Store Account',
       loginTime: new Date().toISOString(),
       isOfflineLogin: !isOnline,
     });
@@ -832,7 +898,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
               <select
                 value={selectedStoreId}
-                onChange={(e) => {
+                onChange={async (e) => {
                   if (e.target.value === '__add_new__') {
                     setIsRegisteringNewStore(true);
                     setSetupStep('form');
@@ -842,9 +908,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     setSetupConfirmPin('');
                     setErrorMsg(null);
                   } else {
-                    setSelectedStoreId(e.target.value);
+                    const newId = e.target.value;
+                    setSelectedStoreId(newId);
                     setEnteredPin('');
                     setErrorMsg(null);
+                    const sets = await getSettings(newId);
+                    setActiveStoreSettings(sets);
+                    const cashList = await getAllCashiers(newId);
+                    setCashiers(cashList);
+                    if (cashList.length > 0) {
+                      setSelectedCashierId(cashList[0].id);
+                    } else {
+                      setSelectedCashierId('');
+                    }
                   }
                 }}
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl py-2 px-3 text-xs md:text-sm font-semibold text-white focus:outline-hidden focus:border-indigo-500 cursor-pointer"
@@ -1029,15 +1105,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             {/* Footer Hint */}
             <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80 space-y-1.5">
               <div>Offline Local PIN Lock • Protected Business Records</div>
-              {forceShowLogin && (
-                <button
-                  type="button"
-                  onClick={() => setForceShowLogin(false)}
-                  className="text-indigo-400 hover:text-indigo-300 font-bold hover:underline transition-all cursor-pointer block w-full text-center"
-                >
-                  Back to Setup Screen
-                </button>
-              )}
             </div>
           </>
         )}

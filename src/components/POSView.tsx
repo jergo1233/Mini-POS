@@ -259,6 +259,7 @@ export const POSView: React.FC<POSViewProps> = ({
       customerId: selectedCust?.id,
       customerName: selectedCust?.name || 'Walk-in Customer',
       cashier: activeCashierName || 'Cashier',
+      storeId: settings.storeId || 'store-main',
       syncStatus: isOnline ? 'synced' : 'pending',
     };
 

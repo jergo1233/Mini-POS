@@ -388,6 +388,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       categoryId: finalCategoryId,
       description: description.trim(),
       image: imageBlob,
+      storeId: editingProduct?.storeId || settings.storeId || 'store-main',
       createdAt: editingProduct ? editingProduct.createdAt : now,
       updatedAt: now,
     };

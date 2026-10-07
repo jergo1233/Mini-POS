@@ -299,13 +299,15 @@ export function openDB(): Promise<IDBDatabase> {
 export async function seedInitialData(): Promise<void> {
   const db = await openDB();
 
-  // Check settings
-  const settings = await getSettings(db);
-  if (!settings) {
-    await saveSettings(DEFAULT_SETTINGS, db);
+  // Check store accounts
+  const accounts = await getAllStoreAccounts(db);
+  if (accounts.length > 0) {
+    // Existing store(s) already configured; do not overwrite
+    return;
   }
 
-  // Only seed sample products and cashiers on brand-new initial install before setup
+  // Check settings
+  const settings = await getSettings(undefined, db);
   if (!settings || !settings.isSetup) {
     // Check categories
     const categories = await getAllCategories(db);
@@ -316,7 +318,7 @@ export async function seedInitialData(): Promise<void> {
     }
 
     // Check cashiers
-    const cashiers = await getAllCashiers(db);
+    const cashiers = await getAllCashiers(undefined, db);
     if (cashiers.length === 0) {
       for (const c of DEFAULT_CASHIERS) {
         await saveCashier(c, db);
@@ -324,7 +326,7 @@ export async function seedInitialData(): Promise<void> {
     }
 
     // Check products
-    const products = await getAllProducts(db);
+    const products = await getAllProducts(undefined, db);
     if (products.length === 0) {
       const now = new Date().toISOString();
       for (const p of DEFAULT_PRODUCTS) {
@@ -386,20 +388,41 @@ export async function deleteCategory(id: string): Promise<void> {
 }
 
 // --- Products ---
-export async function getAllProducts(storeId?: string, dbInstance?: IDBDatabase): Promise<Product[]> {
-  const db = dbInstance || (await openDB());
+export async function getAllProducts(
+  storeIdOrDb?: string | IDBDatabase,
+  dbInstance?: IDBDatabase
+): Promise<Product[]> {
+  let targetStoreId: string | undefined = undefined;
+  let dbToUse: IDBDatabase | undefined = undefined;
+
+  if (typeof storeIdOrDb === 'string') {
+    targetStoreId = storeIdOrDb;
+    dbToUse = dbInstance;
+  } else if (storeIdOrDb && typeof storeIdOrDb === 'object') {
+    dbToUse = storeIdOrDb as IDBDatabase;
+  } else {
+    dbToUse = dbInstance;
+  }
+
+  const db = dbToUse || (await openDB());
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('products', 'readonly');
-    const store = tx.objectStore('products');
-    const request = store.getAll();
-    request.onsuccess = () => {
-      let list = (request.result || []) as Product[];
-      if (storeId) {
-        list = list.filter((p) => !p.storeId || p.storeId === storeId || (storeId === 'store-main' && !p.storeId));
-      }
-      resolve(list);
-    };
-    request.onerror = () => reject(request.error);
+    try {
+      const tx = db.transaction('products', 'readonly');
+      const store = tx.objectStore('products');
+      const request = store.getAll();
+      request.onsuccess = () => {
+        let list = (request.result || []) as Product[];
+        if (targetStoreId) {
+          list = list.filter(
+            (p) => !p.storeId || p.storeId === targetStoreId || (targetStoreId === 'store-main' && !p.storeId)
+          );
+        }
+        resolve(list);
+      };
+      request.onerror = () => reject(request.error);
+    } catch (e) {
+      resolve([]);
+    }
   });
 }
 
@@ -465,23 +488,44 @@ export async function generateUniqueBarcode(): Promise<string> {
 }
 
 // --- Transactions & Stock Movements ---
-export async function getAllTransactions(storeId?: string): Promise<Transaction[]> {
-  const db = await openDB();
+export async function getAllTransactions(
+  storeIdOrDb?: string | IDBDatabase,
+  dbInstance?: IDBDatabase
+): Promise<Transaction[]> {
+  let targetStoreId: string | undefined = undefined;
+  let dbToUse: IDBDatabase | undefined = undefined;
+
+  if (typeof storeIdOrDb === 'string') {
+    targetStoreId = storeIdOrDb;
+    dbToUse = dbInstance;
+  } else if (storeIdOrDb && typeof storeIdOrDb === 'object') {
+    dbToUse = storeIdOrDb as IDBDatabase;
+  } else {
+    dbToUse = dbInstance;
+  }
+
+  const db = dbToUse || (await openDB());
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('transactions', 'readonly');
-    const store = tx.objectStore('transactions');
-    const request = store.getAll();
-    request.onsuccess = () => {
-      let results = (request.result || []) as Transaction[];
-      if (storeId) {
-        results = results.filter((t) => !t.storeId || t.storeId === storeId || (storeId === 'store-main' && !t.storeId));
-      }
-      results.sort(
-        (a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-      resolve(results);
-    };
-    request.onerror = () => reject(request.error);
+    try {
+      const tx = db.transaction('transactions', 'readonly');
+      const store = tx.objectStore('transactions');
+      const request = store.getAll();
+      request.onsuccess = () => {
+        let results = (request.result || []) as Transaction[];
+        if (targetStoreId) {
+          results = results.filter(
+            (t) => !t.storeId || t.storeId === targetStoreId || (targetStoreId === 'store-main' && !t.storeId)
+          );
+        }
+        results.sort(
+          (a: Transaction, b: Transaction) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+        resolve(results);
+      };
+      request.onerror = () => reject(request.error);
+    } catch (e) {
+      resolve([]);
+    }
   });
 }
 
@@ -694,9 +738,24 @@ export async function saveRawStockMovement(movement: StockMovement, dbInstance?:
 }
 
 // --- Cashiers ---
-export async function getAllCashiers(storeId?: string, dbInstance?: IDBDatabase): Promise<Cashier[]> {
+export async function getAllCashiers(
+  storeIdOrDb?: string | IDBDatabase,
+  dbInstance?: IDBDatabase
+): Promise<Cashier[]> {
   try {
-    const db = dbInstance || (await openDB());
+    let targetStoreId: string | undefined = undefined;
+    let dbToUse: IDBDatabase | undefined = undefined;
+
+    if (typeof storeIdOrDb === 'string') {
+      targetStoreId = storeIdOrDb;
+      dbToUse = dbInstance;
+    } else if (storeIdOrDb && typeof storeIdOrDb === 'object') {
+      dbToUse = storeIdOrDb as IDBDatabase;
+    } else {
+      dbToUse = dbInstance;
+    }
+
+    const db = dbToUse || (await openDB());
     if (!db.objectStoreNames.contains('cashiers')) return [];
     return new Promise((resolve) => {
       const tx = db.transaction('cashiers', 'readonly');
@@ -704,8 +763,10 @@ export async function getAllCashiers(storeId?: string, dbInstance?: IDBDatabase)
       const req = store.getAll();
       req.onsuccess = () => {
         let list = (req.result || []) as Cashier[];
-        if (storeId) {
-          list = list.filter((c) => !c.storeId || c.storeId === storeId || (storeId === 'store-main' && !c.storeId));
+        if (targetStoreId) {
+          list = list.filter(
+            (c) => !c.storeId || c.storeId === targetStoreId || (targetStoreId === 'store-main' && !c.storeId)
+          );
         }
         resolve(list);
       };
@@ -926,7 +987,10 @@ export async function deleteCustomer(id: string): Promise<void> {
 }
 
 // --- Store Accounts ---
+const STORE_LIST_LOCAL_KEY = 'pos_registered_stores_v1';
+
 export async function getAllStoreAccounts(dbInstance?: IDBDatabase): Promise<StoreAccount[]> {
+  // First attempt from IndexedDB
   const db = dbInstance || (await openDB());
   return new Promise((resolve) => {
     try {
@@ -935,52 +999,111 @@ export async function getAllStoreAccounts(dbInstance?: IDBDatabase): Promise<Sto
       const req = store.get('app_stores_list');
       req.onsuccess = () => {
         let list: StoreAccount[] = req.result ? req.result.value : [];
-        if (!Array.isArray(list) || list.length === 0) {
-          const settingsReq = store.get('app_settings');
-          settingsReq.onsuccess = () => {
-            const currentSets: Settings = settingsReq.result ? settingsReq.result.value : null;
-            if (currentSets && currentSets.isSetup) {
-              const defaultAccount: StoreAccount = {
-                id: currentSets.storeId || 'store-main',
-                storeName: currentSets.storeName || 'Main Store Account',
-                ownerName: currentSets.ownerName || 'Store Admin',
-                storeAddress: currentSets.storeAddress,
-                storeContact: currentSets.storeContact,
-                adminPinHash: currentSets.adminPinHash,
-                adminPinSalt: currentSets.adminPinSalt,
-                recoveryCodeHash: currentSets.recoveryCodeHash,
-                recoveryCodeSalt: currentSets.recoveryCodeSalt,
-                recoveryCodeCreatedAt: currentSets.recoveryCodeCreatedAt,
-                createdAt: new Date().toISOString(),
-                isSetup: true,
-              };
-              list = [defaultAccount];
-              saveStoreAccountsList(list, db);
-            } else {
-              list = [];
-            }
-            resolve(list);
-          };
-          settingsReq.onerror = () => resolve([]);
-        } else {
+        if (Array.isArray(list) && list.length > 0) {
+          try {
+            localStorage.setItem(STORE_LIST_LOCAL_KEY, JSON.stringify(list));
+          } catch (e) {
+            // ignore
+          }
           resolve(list);
+          return;
         }
+
+        // Check fallback from localStorage
+        try {
+          const localSaved = localStorage.getItem(STORE_LIST_LOCAL_KEY);
+          if (localSaved) {
+            const parsed = JSON.parse(localSaved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              resolve(parsed);
+              return;
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        // Check if there was an existing single-store setup in app_settings
+        const settingsReq = store.get('app_settings');
+        settingsReq.onsuccess = () => {
+          const currentSets: Settings = settingsReq.result ? settingsReq.result.value : null;
+          if (currentSets && currentSets.isSetup && currentSets.storeName) {
+            const defaultAccount: StoreAccount = {
+              id: currentSets.storeId || 'store-main',
+              storeName: currentSets.storeName,
+              ownerName: currentSets.ownerName || 'Store Admin',
+              storeAddress: currentSets.storeAddress,
+              storeContact: currentSets.storeContact,
+              adminPinHash: currentSets.adminPinHash,
+              adminPinSalt: currentSets.adminPinSalt,
+              recoveryCodeHash: currentSets.recoveryCodeHash,
+              recoveryCodeSalt: currentSets.recoveryCodeSalt,
+              recoveryCodeCreatedAt: currentSets.recoveryCodeCreatedAt,
+              createdAt: new Date().toISOString(),
+              isSetup: true,
+            };
+            const singleList = [defaultAccount];
+            try {
+              localStorage.setItem(STORE_LIST_LOCAL_KEY, JSON.stringify(singleList));
+            } catch (e) {
+              // ignore
+            }
+            resolve(singleList);
+          } else {
+            resolve([]);
+          }
+        };
+        settingsReq.onerror = () => resolve([]);
       };
-      req.onerror = () => resolve([]);
+      req.onerror = () => {
+        // Fallback to localStorage on error
+        try {
+          const localSaved = localStorage.getItem(STORE_LIST_LOCAL_KEY);
+          if (localSaved) {
+            const parsed = JSON.parse(localSaved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              resolve(parsed);
+              return;
+            }
+          }
+        } catch {}
+        resolve([]);
+      };
     } catch {
+      // Fallback to localStorage
+      try {
+        const localSaved = localStorage.getItem(STORE_LIST_LOCAL_KEY);
+        if (localSaved) {
+          const parsed = JSON.parse(localSaved);
+          if (Array.isArray(parsed)) {
+            resolve(parsed);
+            return;
+          }
+        }
+      } catch {}
       resolve([]);
     }
   });
 }
 
 export async function saveStoreAccountsList(accounts: StoreAccount[], dbInstance?: IDBDatabase): Promise<void> {
+  try {
+    localStorage.setItem(STORE_LIST_LOCAL_KEY, JSON.stringify(accounts));
+  } catch (e) {
+    // ignore
+  }
+
   const db = dbInstance || (await openDB());
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('settings', 'readwrite');
-    const store = tx.objectStore('settings');
-    const req = store.put({ key: 'app_stores_list', value: accounts });
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction('settings', 'readwrite');
+      const store = tx.objectStore('settings');
+      const req = store.put({ key: 'app_stores_list', value: accounts });
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve(); // Always resolve so UI doesn't hang
+    } catch {
+      resolve();
+    }
   });
 }
 
@@ -988,7 +1111,7 @@ export async function saveStoreAccount(account: StoreAccount, dbInstance?: IDBDa
   const accounts = await getAllStoreAccounts(dbInstance);
   const idx = accounts.findIndex((a) => a.id === account.id);
   if (idx >= 0) {
-    accounts[idx] = account;
+    accounts[idx] = { ...accounts[idx], ...account };
   } else {
     accounts.push(account);
   }
@@ -999,73 +1122,153 @@ export async function deleteStoreAccount(id: string): Promise<void> {
   const accounts = await getAllStoreAccounts();
   const updated = accounts.filter((a) => a.id !== id);
   await saveStoreAccountsList(updated);
+
+  try {
+    const db = await openDB();
+    const tx = db.transaction('settings', 'readwrite');
+    const store = tx.objectStore('settings');
+    store.delete(`app_settings_${id}`);
+  } catch (e) {
+    // ignore
+  }
 }
 
 // --- Settings ---
-export async function getSettings(storeId?: string, dbInstance?: IDBDatabase): Promise<Settings> {
-  const db = dbInstance || (await openDB());
-  const targetKey = storeId ? `app_settings_${storeId}` : 'app_settings';
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('settings', 'readonly');
-    const store = tx.objectStore('settings');
-    const request = store.get(targetKey);
-    request.onsuccess = () => {
-      if (request.result && request.result.value) {
-        resolve({ ...DEFAULT_SETTINGS, ...request.result.value, storeId: storeId || request.result.value.storeId || 'store-main' });
-      } else {
-        const fallbackReq = store.get('app_settings');
-        fallbackReq.onsuccess = () => {
-          if (fallbackReq.result && fallbackReq.result.value) {
-            resolve({ ...DEFAULT_SETTINGS, ...fallbackReq.result.value, storeId: storeId || fallbackReq.result.value.storeId || 'store-main' });
-          } else {
-            resolve({ ...DEFAULT_SETTINGS, storeId: storeId || 'store-main' });
-          }
-        };
-        fallbackReq.onerror = () => resolve({ ...DEFAULT_SETTINGS, storeId: storeId || 'store-main' });
-      }
-    };
-    request.onerror = () => reject(request.error);
+export async function getSettings(
+  storeIdOrDb?: string | IDBDatabase,
+  dbInstance?: IDBDatabase
+): Promise<Settings> {
+  let targetStoreId: string | undefined = undefined;
+  let dbToUse: IDBDatabase | undefined = undefined;
+
+  if (typeof storeIdOrDb === 'string') {
+    targetStoreId = storeIdOrDb;
+    dbToUse = dbInstance;
+  } else if (storeIdOrDb && typeof storeIdOrDb === 'object') {
+    dbToUse = storeIdOrDb as IDBDatabase;
+  } else {
+    dbToUse = dbInstance;
+  }
+
+  const db = dbToUse || (await openDB());
+  const targetKey = targetStoreId ? `app_settings_${targetStoreId}` : 'app_settings';
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction('settings', 'readonly');
+      const store = tx.objectStore('settings');
+      const request = store.get(targetKey);
+      request.onsuccess = () => {
+        if (request.result && request.result.value) {
+          resolve({
+            ...DEFAULT_SETTINGS,
+            ...request.result.value,
+            storeId: targetStoreId || request.result.value.storeId || 'store-main',
+          });
+        } else {
+          // If specific store key not in settings, check store accounts list
+          getAllStoreAccounts(db).then((accs) => {
+            const acc = targetStoreId ? accs.find((a) => a.id === targetStoreId) : undefined;
+            if (acc) {
+              const constructed: Settings = {
+                ...DEFAULT_SETTINGS,
+                storeId: acc.id,
+                storeName: acc.storeName,
+                ownerName: acc.ownerName,
+                storeAddress: acc.storeAddress || DEFAULT_SETTINGS.storeAddress,
+                storeContact: acc.storeContact || DEFAULT_SETTINGS.storeContact,
+                adminPinHash: acc.adminPinHash,
+                adminPinSalt: acc.adminPinSalt,
+                recoveryCodeHash: acc.recoveryCodeHash,
+                recoveryCodeSalt: acc.recoveryCodeSalt,
+                recoveryCodeCreatedAt: acc.recoveryCodeCreatedAt,
+                isSetup: acc.isSetup ?? true,
+              };
+              resolve(constructed);
+            } else {
+              const fallbackReq = store.get('app_settings');
+              fallbackReq.onsuccess = () => {
+                if (fallbackReq.result && fallbackReq.result.value) {
+                  resolve({
+                    ...DEFAULT_SETTINGS,
+                    ...fallbackReq.result.value,
+                    storeId: targetStoreId || fallbackReq.result.value.storeId || 'store-main',
+                  });
+                } else {
+                  resolve({ ...DEFAULT_SETTINGS, storeId: targetStoreId || 'store-main' });
+                }
+              };
+              fallbackReq.onerror = () => resolve({ ...DEFAULT_SETTINGS, storeId: targetStoreId || 'store-main' });
+            }
+          }).catch(() => {
+            resolve({ ...DEFAULT_SETTINGS, storeId: targetStoreId || 'store-main' });
+          });
+        }
+      };
+      request.onerror = () => resolve({ ...DEFAULT_SETTINGS, storeId: targetStoreId || 'store-main' });
+    } catch {
+      resolve({ ...DEFAULT_SETTINGS, storeId: targetStoreId || 'store-main' });
+    }
   });
 }
 
-export async function saveSettings(settings: Settings, storeId?: string, dbInstance?: IDBDatabase): Promise<void> {
-  const db = dbInstance || (await openDB());
-  const targetStoreId = storeId || settings.storeId || 'store-main';
+export async function saveSettings(
+  settings: Settings,
+  storeIdOrDb?: string | IDBDatabase,
+  dbInstance?: IDBDatabase
+): Promise<void> {
+  let targetStoreId: string = settings.storeId || 'store-main';
+  let dbToUse: IDBDatabase | undefined = undefined;
+
+  if (typeof storeIdOrDb === 'string') {
+    targetStoreId = storeIdOrDb;
+    dbToUse = dbInstance;
+  } else if (storeIdOrDb && typeof storeIdOrDb === 'object') {
+    dbToUse = storeIdOrDb as IDBDatabase;
+  } else {
+    dbToUse = dbInstance;
+  }
+
+  const db = dbToUse || (await openDB());
   const targetKey = `app_settings_${targetStoreId}`;
   const updatedSettings: Settings = { ...settings, storeId: targetStoreId };
 
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('settings', 'readwrite');
-    const store = tx.objectStore('settings');
-    
-    store.put({ key: targetKey, value: updatedSettings });
-    if (targetStoreId === 'store-main') {
-      store.put({ key: 'app_settings', value: updatedSettings });
-    }
+    try {
+      const tx = db.transaction('settings', 'readwrite');
+      const store = tx.objectStore('settings');
 
-    tx.oncomplete = async () => {
-      try {
-        const storeAccount: StoreAccount = {
-          id: targetStoreId,
-          storeName: settings.storeName || 'Store Account',
-          ownerName: settings.ownerName || 'Store Admin',
-          storeAddress: settings.storeAddress,
-          storeContact: settings.storeContact,
-          adminPinHash: settings.adminPinHash,
-          adminPinSalt: settings.adminPinSalt,
-          recoveryCodeHash: settings.recoveryCodeHash,
-          recoveryCodeSalt: settings.recoveryCodeSalt,
-          recoveryCodeCreatedAt: settings.recoveryCodeCreatedAt,
-          createdAt: new Date().toISOString(),
-          isSetup: settings.isSetup ?? true,
-        };
-        await saveStoreAccount(storeAccount, db);
-      } catch (e) {
-        console.warn('Syncing store account summary failed:', e);
+      store.put({ key: targetKey, value: updatedSettings });
+      if (targetStoreId === 'store-main') {
+        store.put({ key: 'app_settings', value: updatedSettings });
       }
-      resolve();
-    };
-    tx.onerror = () => reject(tx.error);
+
+      tx.oncomplete = async () => {
+        try {
+          const storeAccount: StoreAccount = {
+            id: targetStoreId,
+            storeName: settings.storeName || 'Store Account',
+            ownerName: settings.ownerName || 'Store Admin',
+            storeAddress: settings.storeAddress,
+            storeContact: settings.storeContact,
+            adminPinHash: settings.adminPinHash,
+            adminPinSalt: settings.adminPinSalt,
+            recoveryCodeHash: settings.recoveryCodeHash,
+            recoveryCodeSalt: settings.recoveryCodeSalt,
+            recoveryCodeCreatedAt: settings.recoveryCodeCreatedAt,
+            createdAt: new Date().toISOString(),
+            isSetup: settings.isSetup ?? true,
+          };
+          await saveStoreAccount(storeAccount, db);
+        } catch (e) {
+          console.warn('Syncing store account summary failed:', e);
+        }
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    } catch (e) {
+      reject(e);
+    }
   });
 }
 

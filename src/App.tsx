@@ -129,6 +129,20 @@ export default function App() {
     };
     window.addEventListener('pos-navigate', handleNavigate);
 
+    // Listen for store switching events
+    const handleSwitchStore = (e: any) => {
+      setCurrentSession(null);
+      setIsLocked(false);
+      try {
+        sessionStorage.removeItem('pos_active_session');
+        localStorage.removeItem('pos_active_session');
+        if (e.detail) {
+          localStorage.setItem('pos_preferred_store_id', e.detail);
+        }
+      } catch (err) {}
+    };
+    window.addEventListener('pos-switch-store', handleSwitchStore);
+
     // Register PWA service worker for offline caching
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch((err) => {
@@ -137,6 +151,7 @@ export default function App() {
     }
     return () => {
       window.removeEventListener('pos-navigate', handleNavigate);
+      window.removeEventListener('pos-switch-store', handleSwitchStore);
     };
   }, [loadData]);
 
