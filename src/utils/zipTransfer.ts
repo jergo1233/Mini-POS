@@ -95,6 +95,7 @@ export interface ZipInspection {
     cashiers?: Cashier[];
     settings?: Settings;
     productHistory?: any[];
+    resetRequests?: any[];
     imagesMap?: Map<string, Blob>; // productId -> Blob
   };
 }
@@ -549,6 +550,26 @@ export async function inspectZipFile(file: File): Promise<ZipInspection> {
       }
     }
 
+    const productHistoryFile = zip.file('product_history.json');
+    if (productHistoryFile) {
+      try {
+        const text = await productHistoryFile.async('text');
+        result.parsedData.productHistory = JSON.parse(text);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const resetRequestsFile = zip.file('reset_requests.json');
+    if (resetRequestsFile) {
+      try {
+        const text = await resetRequestsFile.async('text');
+        result.parsedData.resetRequests = JSON.parse(text);
+      } catch (e) {
+        // ignore
+      }
+    }
+
     // 4. Extract Product Images from images/ folder inside ZIP
     const imagesMap = new Map<string, Blob>();
     const imageFiles = Object.keys(zip.files).filter((f) => f.startsWith('images/') && !zip.files[f].dir);
@@ -842,53 +863,57 @@ export async function executeFullRestore(
   // Preserve local authentication credentials
   const currentSettings = await getSettings(db);
 
-  // Clear business data stores
-  const storesToClear = [
-    'products',
-    'categories',
-    'transactions',
-    'customers',
-    'product_history',
-    'cashiers',
-    'stock_movements',
-    'reset_requests',
-  ];
-
-  for (const storeName of storesToClear) {
-    if (db.objectStoreNames.contains(storeName)) {
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        const store = tx.objectStore(storeName);
-        const req = store.clear();
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
-      });
-    }
-  }
-
   let productsAdded = 0;
+  let productsUpdated = 0;
   let categoriesAdded = 0;
   let transactionsAdded = 0;
   let customersAdded = 0;
   let cashiersAdded = 0;
   let stockMovementsAdded = 0;
+  let historyAdded = 0;
+  let resetRequestsAdded = 0;
   let imagesRestored = 0;
 
   const parsed = inspection.parsedData;
   const imagesMap = parsed.imagesMap || new Map<string, Blob>();
 
-  // Restore Categories
+  // Restore Categories (Merge: Add if not exists)
   if (Array.isArray(parsed.categories)) {
+    const localCategories = await getAllCategories(db);
+    const localCatIds = new Set(localCategories.map((c) => c.id));
     for (const cat of parsed.categories) {
       if (cat && cat.id && cat.name) {
-        await saveCategory(cat, db);
-        categoriesAdded++;
+        if (!localCatIds.has(cat.id)) {
+          await saveCategory(cat, db);
+          categoriesAdded++;
+        }
       }
     }
   }
 
-  // Restore Products with extracted image Blobs
+  // Pre-fetch all local transactions, stock movements, etc. to protect and merge stocks correctly
+  const localTransactions = await getAllTransactions();
+  const localTxIds = new Set(localTransactions.map(t => t.id));
+
+  const localStockMovements = await getAllStockMovements(db);
+  const localSMIds = new Set(localStockMovements.map(s => s.id));
+
+  const backupSMIds = new Set((parsed.stockMovements || []).map(s => s.id));
+
+  // Index local stock movements by product ID to adjust restored stock accurately
+  const localMovementsByProduct = new Map<string, StockMovement[]>();
+  for (const m of localStockMovements) {
+    if (!localMovementsByProduct.has(m.productId)) {
+      localMovementsByProduct.set(m.productId, []);
+    }
+    localMovementsByProduct.get(m.productId)!.push(m);
+  }
+
+  // Restore Products with extracted image Blobs and Smart Stock Protection
   if (Array.isArray(parsed.products)) {
+    const localProducts = await getAllProducts(db);
+    const localProdIds = new Set(localProducts.map(p => p.id));
+
     for (const prod of parsed.products) {
       if (prod && prod.id && prod.name) {
         let imageBlob: Blob | undefined = undefined;
@@ -904,21 +929,38 @@ export async function executeFullRestore(
           }
         }
 
+        // SMART INVENTORY ALIGNMENT:
+        // Find any local stock movements (e.g. sales, returns, restocks) that are NOT present in the backup.
+        // These represent the sales/events that occurred after the backup was taken (even if the product was deleted locally).
+        // We apply their quantity changes to the backup stock level to get the correct current stock!
+        const pMovements = localMovementsByProduct.get(prod.id) || [];
+        const newMovements = pMovements.filter(m => !backupSMIds.has(m.id));
+        const localAdjustment = newMovements.reduce((sum, m) => sum + m.quantityChange, 0);
+        let finalStock = prod.stock + localAdjustment;
+        if (finalStock < 0) finalStock = 0;
+
+        const existsLocally = localProdIds.has(prod.id);
+        if (existsLocally) {
+          productsUpdated++;
+        } else {
+          productsAdded++;
+        }
+
         const productToSave: Product = {
           ...prod,
-          image: imageBlob,
+          stock: finalStock,
+          image: imageBlob || prod.image,
           syncStatus: 'synced',
         };
         await saveProduct(productToSave, db);
-        productsAdded++;
       }
     }
   }
 
-  // Restore Transactions
+  // Restore Transactions (Merge: Add if not exists)
   if (Array.isArray(parsed.transactions)) {
     for (const tx of parsed.transactions) {
-      if (tx && tx.id) {
+      if (tx && tx.id && !localTxIds.has(tx.id)) {
         await new Promise<void>((resolve, reject) => {
           const idbTx = db.transaction('transactions', 'readwrite');
           const store = idbTx.objectStore('transactions');
@@ -931,10 +973,10 @@ export async function executeFullRestore(
     }
   }
 
-  // Restore Stock Movements
+  // Restore Stock Movements (Merge: Add if not exists)
   if (Array.isArray(parsed.stockMovements)) {
     for (const sm of parsed.stockMovements) {
-      if (sm && sm.id) {
+      if (sm && sm.id && !localSMIds.has(sm.id)) {
         await new Promise<void>((resolve, reject) => {
           const idbTx = db.transaction('stock_movements', 'readwrite');
           const store = idbTx.objectStore('stock_movements');
@@ -947,22 +989,56 @@ export async function executeFullRestore(
     }
   }
 
-  // Restore Customers
+  // Restore Customers (Merge: Add if not exists)
   if (Array.isArray(parsed.customers)) {
+    const localCusts = await getAllCustomers();
+    const localCustIds = new Set(localCusts.map(c => c.id));
     for (const cust of parsed.customers) {
-      if (cust && cust.id) {
+      if (cust && cust.id && !localCustIds.has(cust.id)) {
         await saveCustomer(cust, db);
         customersAdded++;
       }
     }
   }
 
-  // Restore Cashiers
+  // Restore Cashiers (Merge: Add if not exists)
   if (Array.isArray(parsed.cashiers)) {
+    const localCashiers = await getAllCashiers(db);
+    const localCashierIds = new Set(localCashiers.map(c => c.id));
     for (const cashier of parsed.cashiers) {
-      if (cashier && cashier.id) {
+      if (cashier && cashier.id && !localCashierIds.has(cashier.id)) {
         await saveCashier(cashier, db);
         cashiersAdded++;
+      }
+    }
+  }
+
+  // Restore Product History Logs (Merge: Add if not exists)
+  if (Array.isArray(parsed.productHistory)) {
+    const localHistory = await getAllProductHistory();
+    const localHistIds = new Set(localHistory.map(h => h.id));
+    for (const log of parsed.productHistory) {
+      if (log && log.id && !localHistIds.has(log.id)) {
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction('product_history', 'readwrite');
+          const store = tx.objectStore('product_history');
+          const req = store.put(log);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+        historyAdded++;
+      }
+    }
+  }
+
+  // Restore Reset Requests (Merge: Add if not exists)
+  if (Array.isArray(parsed.resetRequests)) {
+    const localResetRequests = await getAllResetRequests(db);
+    const localReqIds = new Set(localResetRequests.map(r => r.id));
+    for (const req of parsed.resetRequests) {
+      if (req && req.id && !localReqIds.has(req.id)) {
+        await saveResetRequest(req);
+        resetRequestsAdded++;
       }
     }
   }
@@ -987,10 +1063,10 @@ export async function executeFullRestore(
 
   return {
     success: true,
-    message: `Full Restore completed! Restored ${productsAdded} products (${imagesRestored} images), ${categoriesAdded} categories, ${transactionsAdded} sales records, and ${customersAdded} customers. Local Admin PIN credentials were strictly preserved.`,
+    message: `Merge Restore completed! Merged ${productsAdded} new products, updated ${productsUpdated} existing products (aligned with actual sales), merged ${transactionsAdded} sales, and restored ${imagesRestored} product images. All other business logs were fully preserved.`,
     summary: {
       productsAdded,
-      productsUpdated: 0,
+      productsUpdated,
       categoriesAdded,
       transactionsAdded,
       transactionsSkipped: 0,
@@ -1001,3 +1077,4 @@ export async function executeFullRestore(
     },
   };
 }
+
