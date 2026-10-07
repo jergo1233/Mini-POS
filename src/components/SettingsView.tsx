@@ -1362,9 +1362,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Download className="w-6 h-6" />
             </div>
             <span className="font-semibold text-sm text-slate-900 dark:text-white">
-              {exporting ? 'Exporting...' : 'Export Full ZIP Backup'}
+              {exporting ? 'Exporting...' : 'Complete ZIP Backup'}
             </span>
-            <span className="text-xs text-slate-500 mt-1">Full database + images in one ZIP</span>
+            <span className="text-xs text-slate-500 mt-1">Lahat ng Records + Product Photos</span>
           </button>
 
           {/* Export Products Only */}
@@ -1379,7 +1379,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span className="font-semibold text-sm text-slate-900 dark:text-white">
               {exporting ? 'Exporting...' : 'Products Transfer'}
             </span>
-            <span className="text-xs text-slate-500 mt-1">Export only products for other devices</span>
+            <span className="text-xs text-slate-500 mt-1">Product list + Photos (Admin to Cashier)</span>
           </button>
 
           {/* Restore ZIP/JSON */}

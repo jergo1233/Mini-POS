@@ -51,6 +51,17 @@ export const SyncStatusHeader: React.FC<SyncStatusHeaderProps> = ({
             </span>
           </div>
 
+          {/* Backup & Transfer Shortcut */}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('pos-navigate', { detail: 'backup' }))}
+            className="hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs border border-indigo-200 dark:border-indigo-800 transition cursor-pointer shadow-2xs"
+            title="Backup & Transfer Data"
+          >
+            <Database className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Backup</span>
+          </button>
+
           {/* Terminal Lock Button — Specifically for Cashiers */}
           {currentSession.role === 'cashier' && (
             <button

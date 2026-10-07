@@ -47,12 +47,14 @@ export const MoreMenuModal: React.FC<MoreMenuModalProps> = ({
     { id: 'reports', label: 'Business Reports', icon: BarChart3 },
     { id: 'cashiers', label: 'Cashier Accounts & PINs', icon: UserCheck, badge: pendingResetRequestsCount },
     { id: 'customers', label: 'Customers', icon: Users },
-    { id: 'settings', label: 'Settings & ZIP Backup', icon: SettingsIcon },
+    { id: 'backup', label: 'Backup & ZIP Transfer', icon: Package },
+    { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
 
   const cashierItems: MoreMenuItem[] = [
     { id: 'sales', label: 'My Sales History', icon: ReceiptText },
     { id: 'customers', label: 'Customers', icon: Users },
+    { id: 'backup', label: 'Backup & ZIP Transfer', icon: Package },
   ];
 
   const items = userRole === 'admin' ? adminItems : cashierItems;

@@ -33,6 +33,7 @@ import { ReportsView } from './components/ReportsView';
 import { CustomersView } from './components/CustomersView';
 import { SettingsView } from './components/SettingsView';
 import { CashierManagementView } from './components/CashierManagementView';
+import { BackupTransferView } from './components/BackupTransferView';
 import { AnimatedBackground } from './components/AnimatedBackground';
 import { LoginScreen, AuthSession } from './components/LoginScreen';
 import { AutoLockModal } from './components/AutoLockModal';
@@ -56,19 +57,29 @@ export default function App() {
   // Terminal Lock state — persistent for Cashiers across page refreshes
   const [isLocked, setIsLocked] = useState<boolean>(() => {
     try {
-      const sessionStr = sessionStorage.getItem('pos_active_session') || localStorage.getItem('pos_active_session');
-      if (sessionStr) {
-        const parsed = JSON.parse(sessionStr);
-        if (parsed && parsed.role === 'cashier') {
-          const lockedVal = sessionStorage.getItem('pos_terminal_locked') || localStorage.getItem('pos_terminal_locked');
-          return lockedVal === 'true';
-        }
-      }
-      return false;
+      const saved = sessionStorage.getItem('pos_terminal_locked') || localStorage.getItem('pos_terminal_locked');
+      return saved === 'true';
     } catch {
       return false;
     }
   });
+
+  // Keep storage in sync whenever isLocked changes
+  useEffect(() => {
+    try {
+      if (currentSession?.role === 'cashier') {
+        if (isLocked) {
+          sessionStorage.setItem('pos_terminal_locked', 'true');
+          localStorage.setItem('pos_terminal_locked', 'true');
+        } else {
+          sessionStorage.removeItem('pos_terminal_locked');
+          localStorage.removeItem('pos_terminal_locked');
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [isLocked, currentSession]);
 
   // App data state
   const [products, setProducts] = useState<Product[]>([]);
@@ -109,12 +120,23 @@ export default function App() {
   useEffect(() => {
     loadData();
 
+    // Listen for cross-component navigation events
+    const handleNavigate = (e: any) => {
+      if (e.detail) {
+        setCurrentTab(e.detail as TabType);
+      }
+    };
+    window.addEventListener('pos-navigate', handleNavigate);
+
     // Register PWA service worker for offline caching
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch((err) => {
         console.debug('Service worker registration failed:', err);
       });
     }
+    return () => {
+      window.removeEventListener('pos-navigate', handleNavigate);
+    };
   }, [loadData]);
 
   // Inactivity Auto-Lock Timer — STRICTLY active for Cashier role
@@ -394,6 +416,14 @@ export default function App() {
             <SettingsView
               settings={settings}
               onRefresh={loadData}
+            />
+          )}
+
+          {currentTab === 'backup' && (
+            <BackupTransferView
+              settings={settings}
+              onRefresh={loadData}
+              userRole={currentSession.role}
             />
           )}
         </div>
