@@ -23,16 +23,6 @@ export const SyncStatusHeader: React.FC<SyncStatusHeaderProps> = ({
 }) => {
   return (
     <div className="flex items-center gap-2 md:gap-3">
-      {/* 100% Offline Local Database Badge */}
-      <div className="flex items-center gap-1.5 px-2.5 py-1 md:py-1.5 rounded-full text-xs font-semibold border backdrop-blur-md bg-emerald-50/90 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 transition-all">
-        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="flex items-center gap-1">
-          <Database className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-          <span className="hidden sm:inline">Offline POS</span>
-          <span className="text-[10px] opacity-85">• Local DB</span>
-        </span>
-      </div>
-
       {/* Active Store Badge */}
       {currentSession?.storeName && (
         <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60" title={`Active Store: ${currentSession.storeName}`}>
