@@ -1458,14 +1458,16 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 </div>
               )}
 
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                    Product Name *
+              {/* High-Visibility Product Name Input Container */}
+              <div className="p-3.5 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800/80 space-y-1.5 shadow-2xs">
+                <div className="flex justify-between items-center">
+                  <label htmlFor="product-name-input" className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Product Name *</span>
                   </label>
                   {name.trim() && products.some(p => p.id !== editingProduct?.id && p.name.trim().toLowerCase() === name.trim().toLowerCase()) && (
-                    <span className="text-[11px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Duplicate Name
+                    <span className="text-[11px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1 bg-red-100 dark:bg-red-950/80 px-2.5 py-0.5 rounded-full border border-red-200 dark:border-red-800">
+                      <AlertTriangle className="w-3.5 h-3.5" /> Duplicate Name
                     </span>
                   )}
                 </div>
@@ -1479,11 +1481,11 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     setName(e.target.value);
                     if (formError) setFormError(null);
                   }}
-                  placeholder="e.g. Universal Product Name"
-                  className={`w-full rounded-xl border px-3.5 py-2 text-sm dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 ${
+                  placeholder="Enter Product Name (e.g. Coca-Cola 1.5L, White Bread)"
+                  className={`w-full rounded-xl border-2 px-4 py-3 text-base font-semibold text-slate-900 dark:text-white bg-white dark:bg-slate-900 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 transition-all ${
                     name.trim() && products.some(p => p.id !== editingProduct?.id && p.name.trim().toLowerCase() === name.trim().toLowerCase())
-                      ? 'border-red-500 focus:ring-red-400 bg-red-50/20 dark:bg-red-950/20'
-                      : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500'
+                      ? 'border-red-500 focus:ring-red-400 bg-red-50/40 dark:bg-red-950/40'
+                      : 'border-blue-400 dark:border-blue-500/80 focus:border-blue-600 focus:ring-blue-500/50 shadow-xs'
                   }`}
                 />
                 {name.trim() && products.some(p => p.id !== editingProduct?.id && p.name.trim().toLowerCase() === name.trim().toLowerCase()) && (
@@ -1495,7 +1497,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                     SKU Code
                   </label>
                   <input
@@ -1503,18 +1505,18 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     value={sku}
                     onChange={(e) => setSku(e.target.value)}
                     placeholder="e.g. COKE-001"
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                    <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
                       Barcode *
                     </label>
                     <button
                       type="button"
                       onClick={handleGenerateNewBarcode}
-                      className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-semibold"
+                      className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-bold"
                     >
                       <RefreshCw className="w-3 h-3" /> Auto-Generate
                     </button>
@@ -1528,10 +1530,10 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                       if (formError) setFormError(null);
                     }}
                     placeholder="e.g. 200001000001"
-                    className={`w-full rounded-xl border px-3.5 py-2 text-sm font-mono dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 ${
+                    className={`w-full rounded-xl border px-3.5 py-2.5 text-sm font-mono dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 ${
                       barcode.trim() && products.some(p => p.id !== editingProduct?.id && p.barcode.trim().toLowerCase() === barcode.trim().toLowerCase())
                         ? 'border-red-500 focus:ring-red-400 bg-red-50/20 dark:bg-red-950/20'
-                        : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500'
+                        : 'border-slate-300 dark:border-slate-700 focus:ring-blue-500'
                     }`}
                   />
                   {barcode.trim() && products.some(p => p.id !== editingProduct?.id && p.barcode.trim().toLowerCase() === barcode.trim().toLowerCase()) && (
@@ -1544,7 +1546,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                     Price ({settings.currency}) *
                   </label>
                   <input
@@ -1554,11 +1556,11 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     required
                     value={price || ''}
                     onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2.5 text-sm font-semibold text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                     Cost ({settings.currency})
                   </label>
                   <input
@@ -1567,11 +1569,11 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     min="0"
                     value={cost || ''}
                     onChange={(e) => setCost(parseFloat(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                     {editingProduct ? 'Current Stock *' : 'Initial Stock *'}
                   </label>
                   <input
@@ -1580,13 +1582,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     required
                     value={stock}
                     onChange={(e) => setStock(parseInt(e.target.value) || 0)}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2.5 text-sm font-semibold text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                   Category Selection *
                 </label>
                 <div className="space-y-2">
@@ -1599,7 +1601,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                         setCustomCategoryName('');
                       }
                     }}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2.5 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="" disabled>Select a Category...</option>
                     {categories.map(cat => (
@@ -1616,7 +1618,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                         value={customCategoryName}
                         onChange={(e) => setCustomCategoryName(e.target.value)}
                         required
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:ring-2 focus:ring-blue-500"
+                        className="w-full rounded-xl border border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-800 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   )}
@@ -1624,7 +1626,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
                   Description
                 </label>
                 <textarea
@@ -1632,7 +1634,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Optional product details..."
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2.5 text-sm text-slate-900 dark:text-white"
                 />
               </div>
 

@@ -5,29 +5,21 @@ import {
   ShieldAlert,
   KeyRound,
   Store,
-  Wifi,
-  WifiOff,
-  RefreshCw,
   CheckCircle2,
   AlertCircle,
   ArrowRight,
-  Sparkles,
-  PhoneCall,
-  Download,
   Printer,
+  Download,
   Copy,
   Check,
-  FileText,
-  AlertTriangle,
   Eye,
   EyeOff,
   ShieldCheck,
   X,
   LogIn,
   PlusCircle,
-  Building2,
-  Delete,
   User,
+  PhoneCall,
 } from 'lucide-react';
 import {
   Cashier,
@@ -41,7 +33,6 @@ import {
   saveSettings,
   saveResetRequest,
   CashierResetRequest,
-  openDB,
   getAppState,
   saveAppState,
 } from '../db/indexedDB';
@@ -114,10 +105,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [recoveryFailedAttempts, setRecoveryFailedAttempts] = useState(0);
   const [lockoutRemainingSecs, setLockoutRemainingSecs] = useState(0);
 
-  // Registration / First-Time Setup states
+  // Registration states (Only Username/Store Name + PIN)
   const [setupStep, setSetupStep] = useState<'form' | 'recoveryCode'>('form');
   const [setupStoreName, setSetupStoreName] = useState('');
-  const [setupOwnerName, setSetupOwnerName] = useState('');
   const [setupPin, setSetupPin] = useState('');
   const [setupConfirmPin, setSetupConfirmPin] = useState('');
   const [generatedRecoveryCode, setGeneratedRecoveryCode] = useState('');
@@ -152,7 +142,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         setSetupStep('form');
         setEnteredStoreName('');
       } else {
-        // If there's a last used store/username, pre-populate for convenience
         const lastStore = await getAppState<string>('last_store_name');
         if (lastStore && accounts.some((a) => a.storeName.trim().toLowerCase() === lastStore.trim().toLowerCase())) {
           setEnteredStoreName(lastStore);
@@ -203,24 +192,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   }, [enteredStoreName, storeAccounts]);
 
-  // Keypad button click helper
-  const handleKeypadPress = (val: string) => {
-    setErrorMsg(null);
-    if (enteredPin.length < 6) {
-      setEnteredPin((prev) => prev + val);
-    }
-  };
-
-  const handleKeypadBackspace = () => {
-    setErrorMsg(null);
-    setEnteredPin((prev) => prev.slice(0, -1));
-  };
-
-  const handleKeypadClear = () => {
-    setEnteredPin('');
-    setErrorMsg(null);
-  };
-
   // ----------------------------------------------------
   // ADMIN LOGIN (Credentials & PIN Matching Verification)
   // ----------------------------------------------------
@@ -229,6 +200,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setErrorMsg(null);
 
     const cleanPin = enteredPin.trim();
+    const cleanName = enteredStoreName.trim().toLowerCase();
+
     if (!cleanPin) {
       setErrorMsg('Please enter your Admin PIN.');
       return;
@@ -244,14 +217,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      const cleanName = enteredStoreName.trim().toLowerCase();
       let targetStore: StoreAccount | null = null;
 
       if (cleanName) {
         // User typed a Username / Store Name: verify against that specific account
         targetStore = accounts.find((s) => s.storeName.trim().toLowerCase() === cleanName) || null;
         if (!targetStore) {
-          setErrorMsg(`Username / Store Name "${enteredStoreName.trim()}" not found. Please verify spelling.`);
+          setErrorMsg(`Username / Store Name "${enteredStoreName.trim()}" not found. Please check spelling.`);
           setLoading(false);
           return;
         }
@@ -264,12 +236,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         });
 
         if (!isMatch) {
-          setErrorMsg(`Incorrect Admin PIN for "${targetStore.storeName}". Please try again.`);
+          setErrorMsg(`Incorrect PIN for "${targetStore.storeName}". Please try again.`);
           setLoading(false);
           return;
         }
       } else {
-        // Username / Store Name field was left blank:
+        // Username / Store Name field left blank:
         // Test entered PIN across all registered store accounts
         const matchingStores: StoreAccount[] = [];
         for (const store of accounts) {
@@ -287,11 +259,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         if (matchingStores.length === 1) {
           targetStore = matchingStores[0];
         } else if (matchingStores.length > 1) {
-          setErrorMsg('Multiple accounts match this PIN. Please enter your Username / Store Name above.');
+          setErrorMsg('Multiple accounts match this PIN. Please enter your Username / Store Name.');
           setLoading(false);
           return;
         } else {
-          setErrorMsg('Incorrect Admin PIN. Please check your PIN or enter your Username / Store Name.');
+          setErrorMsg('Incorrect PIN. Please check your PIN or enter your Username / Store Name.');
           setLoading(false);
           return;
         }
@@ -308,7 +280,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       onLoginSuccess({
         role: 'admin',
         id: 'admin',
-        name: storeSettings.ownerName || targetStore.ownerName || 'Store Administrator',
+        name: storeSettings.ownerName || targetStore.ownerName || targetStore.storeName,
         storeId: targetStore.id,
         storeName: targetStore.storeName,
         loginTime: new Date().toISOString(),
@@ -331,7 +303,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     const cleanPin = enteredPin.trim();
     if (!cleanPin) {
-      setErrorMsg('Please enter your 4-digit Cashier PIN.');
+      setErrorMsg('Please enter your Cashier PIN.');
       return;
     }
 
@@ -344,7 +316,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       if (cleanName) {
         targetStore = accounts.find((s) => s.storeName.trim().toLowerCase() === cleanName) || null;
         if (!targetStore) {
-          setErrorMsg(`Username / Store Name "${enteredStoreName.trim()}" not found. Please verify spelling.`);
+          setErrorMsg(`Username / Store Name "${enteredStoreName.trim()}" not found. Please check spelling.`);
           setLoading(false);
           return;
         }
@@ -353,7 +325,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       }
 
       if (!targetStore) {
-        // Search across all cashiers
         const allCashiers = await getAllCashiers();
         const matching = allCashiers.filter((c) => c.pin === cleanPin && c.active);
         if (matching.length === 1) {
@@ -375,7 +346,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           });
           return;
         } else if (matching.length > 1) {
-          setErrorMsg('Multiple cashiers match this PIN. Please enter your Username / Store Name above.');
+          setErrorMsg('Multiple cashiers match this PIN. Please enter your Username / Store Name.');
           setLoading(false);
           return;
         } else {
@@ -390,7 +361,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       let cashier = storeCashiers.find((c) => c.id === selectedCashierId);
 
       if (!cashier) {
-        // Attempt match by entered PIN
         cashier = storeCashiers.find((c) => c.pin === cleanPin);
       }
 
@@ -407,7 +377,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       }
 
       if (!cashier.active) {
-        setErrorMsg('This cashier account is inactive. Please contact the Store Administrator.');
+        setErrorMsg('This cashier account is inactive. Please contact your Store Administrator.');
         setLoading(false);
         return;
       }
@@ -442,25 +412,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setErrorMsg(null);
 
     const cleanStoreName = setupStoreName.trim();
-    const cleanOwnerName = setupOwnerName.trim();
 
     if (!cleanStoreName) {
       setErrorMsg('Username / Store Name is required.');
       return;
     }
 
-    if (!cleanOwnerName) {
-      setErrorMsg('Owner / Admin Name is required.');
-      return;
-    }
-
     if (setupPin.length < 4 || setupPin.length > 6 || !/^\d+$/.test(setupPin)) {
-      setErrorMsg('Admin PIN must be between 4 to 6 numeric digits.');
+      setErrorMsg('PIN must be between 4 to 6 numeric digits.');
       return;
     }
 
     if (setupPin !== setupConfirmPin) {
-      setErrorMsg('Admin PINs do not match. Please re-enter.');
+      setErrorMsg('PINs do not match. Please re-enter.');
       return;
     }
 
@@ -486,7 +450,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         ...DEFAULT_SETTINGS,
         storeId: newStoreId,
         storeName: cleanStoreName,
-        ownerName: cleanOwnerName,
+        ownerName: cleanStoreName,
         adminPin: setupPin,
         adminPinHash: creds.adminPinHash,
         adminPinSalt: creds.adminPinSalt,
@@ -502,7 +466,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       const newStoreAccount: StoreAccount = {
         id: newStoreId,
         storeName: cleanStoreName,
-        ownerName: cleanOwnerName,
+        ownerName: cleanStoreName,
         adminPinHash: creds.adminPinHash,
         adminPinSalt: creds.adminPinSalt,
         recoveryCodeHash: creds.recoveryCodeHash,
@@ -544,13 +508,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     const content = generateRecoveryCodeDocument(
       generatedRecoveryCode,
       setupStoreName,
-      setupOwnerName
+      setupStoreName
     );
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `admin-recovery-code-${setupStoreName.replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.download = `recovery-code-${setupStoreName.replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -566,13 +530,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     const docText = generateRecoveryCodeDocument(
       generatedRecoveryCode,
       setupStoreName,
-      setupOwnerName
+      setupStoreName
     );
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Admin Recovery Code — ${setupStoreName}</title>
+          <title>Recovery Code — ${setupStoreName}</title>
           <style>
             body { font-family: monospace; padding: 30px; line-height: 1.5; font-size: 13px; color: #000; background: #fff; }
             pre { white-space: pre-wrap; word-wrap: break-word; }
@@ -602,7 +566,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     onLoginSuccess({
       role: 'admin',
       id: 'admin',
-      name: setupOwnerName.trim() || 'Store Administrator',
+      name: setupStoreName.trim(),
       storeId: registeredStoreId || 'store-main',
       storeName: setupStoreName.trim(),
       loginTime: new Date().toISOString(),
@@ -685,7 +649,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       }
 
       if (!targetStore) {
-        // Try matching recovery code across all stores
         for (const s of accounts) {
           const isValid = await verifyRecoveryCode(recoveryEnteredCode.trim(), {
             recoveryCodeHash: s.recoveryCodeHash,
@@ -730,7 +693,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      // Valid recovery code: proceed to Step 2
       setRecoveryFailedAttempts(0);
       setRecoveryStep('newPin');
     } catch (err) {
@@ -771,10 +733,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      // 1. Generate replacement credentials
       const newCreds = await createAdminAuthCredentials(recoveryNewPin);
 
-      // 2. Update settings for this store
       const currentSettings = await getSettings(targetStore.id);
       const updatedSettings: Settings = {
         ...currentSettings,
@@ -789,7 +749,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       await saveSettings(updatedSettings, targetStore.id);
 
-      // 3. Update store account record
       const updatedAcc: StoreAccount = {
         ...targetStore,
         adminPinHash: newCreds.adminPinHash,
@@ -827,13 +786,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     const content = generateRecoveryCodeDocument(
       replacementCode,
       recoveryStoreName,
-      'Store Administrator'
+      recoveryStoreName
     );
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `admin-replacement-recovery-code-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.download = `replacement-recovery-code-${new Date().toISOString().slice(0, 10)}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -849,13 +808,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     const docText = generateRecoveryCodeDocument(
       replacementCode,
       recoveryStoreName,
-      'Store Administrator'
+      recoveryStoreName
     );
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Replacement Admin Recovery Code</title>
+          <title>Replacement Recovery Code</title>
           <style>
             body { font-family: monospace; padding: 30px; line-height: 1.5; font-size: 13px; color: #000; background: #fff; }
             pre { white-space: pre-wrap; word-wrap: break-word; }
@@ -892,7 +851,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     onLoginSuccess({
       role: 'admin',
       id: 'admin',
-      name: targetStore?.ownerName || 'Store Administrator',
+      name: targetStore?.ownerName || targetStore?.storeName || 'Store Account',
       storeId: targetStore?.id || 'store-main',
       storeName: targetStore?.storeName || 'Store Account',
       loginTime: new Date().toISOString(),
@@ -919,7 +878,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               Mini Universal POS
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
-              Multi-Account Management • 100% Offline
+              IndexedDB Storage • 100% Offline
             </p>
           </div>
         </div>
@@ -950,7 +909,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 setSetupStep('form');
                 setErrorMsg(null);
                 setSetupStoreName('');
-                setSetupOwnerName('');
                 setSetupPin('');
                 setSetupConfirmPin('');
               }}
@@ -967,7 +925,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         )}
 
         {/* ========================================================= */}
-        {/* VIEW 1: REGISTER ACCOUNT (New Account / Initial Setup)     */}
+        {/* VIEW 1: REGISTER ACCOUNT (Only Username/Store Name & PIN)  */}
         {/* ========================================================= */}
         {authMode === 'register' || storeAccounts.length === 0 ? (
           setupStep === 'form' ? (
@@ -977,12 +935,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   <Store className="w-6 h-6" />
                 </div>
                 <h3 className="text-lg font-bold text-white">
-                  {storeAccounts.length === 0 ? 'First-Time Setup' : 'Register New Account'}
+                  {storeAccounts.length === 0 ? 'First-Time Setup' : 'Register Account'}
                 </h3>
                 <p className="text-xs text-slate-400">
                   {storeAccounts.length === 0
-                    ? 'Configure your account profile and administrator security credentials'
-                    : 'Register an account or branch with independent security PIN'}
+                    ? 'Set up your Username / Store Name and Security PIN'
+                    : 'Create an account with a unique Username / Store Name and PIN'}
                 </p>
               </div>
 
@@ -995,28 +953,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   required
                   value={setupStoreName}
                   onChange={(e) => setSetupStoreName(e.target.value)}
-                  placeholder="Enter Username / Store Name (e.g. mystore or Branch 1)"
+                  placeholder="Enter Username / Store Name"
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Store Owner / Admin Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={setupOwnerName}
-                  onChange={(e) => setSetupOwnerName(e.target.value)}
-                  placeholder="Enter Store Owner / Admin Name"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Create Admin PIN (4–6 digits)
+                  PIN (4–6 digits)
                 </label>
                 <div className="relative">
                   <input
@@ -1040,7 +984,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Confirm Admin PIN
+                  Confirm PIN
                 </label>
                 <input
                   type={showPin ? 'text' : 'password'}
@@ -1065,7 +1009,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 disabled={loading}
                 className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white text-sm shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <span>{loading ? 'Creating Credentials...' : 'Register Account & Generate Recovery Code'}</span>
+                <span>{loading ? 'Registering...' : 'Register Account'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
@@ -1086,7 +1030,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </form>
           ) : (
             // ==========================================
-            // SETUP: DEDICATED RECOVERY CODE SAVE SCREEN
+            // RECOVERY CODE SAVE SCREEN
             // ==========================================
             <div className="space-y-4 text-center">
               <div className="inline-flex p-3 rounded-2xl bg-emerald-600/20 text-emerald-400">
@@ -1094,23 +1038,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
               <h3 className="text-lg font-bold text-white">Save Account Recovery Code</h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Admin credentials for <strong>{setupStoreName}</strong> have been created. In case you ever forget your Admin PIN, this <strong>Recovery Code</strong> is the <strong>only way</strong> to reset your PIN offline.
+                Credentials for <strong>{setupStoreName}</strong> have been registered. Keep this <strong>Recovery Code</strong> in case you forget your PIN.
               </p>
 
-              {/* Recovery Code Display Card */}
               <div className="bg-slate-950 p-4 rounded-2xl border border-indigo-500/40 space-y-2">
                 <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
-                  Official Admin Recovery Code (Offline Only)
+                  Official Recovery Code
                 </span>
                 <div className="text-lg md:text-xl font-mono font-black text-amber-300 tracking-wider select-all py-1">
                   {generatedRecoveryCode}
                 </div>
                 <p className="text-[10px] text-slate-400">
-                  Store this code in a secure location. It will NOT be displayed again.
+                  Store this code safely. It will not be shown again.
                 </p>
               </div>
 
-              {/* Copy, Download, Print Actions */}
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
@@ -1126,7 +1068,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Download .txt</span>
+                  <span>Download</span>
                 </button>
                 <button
                   type="button"
@@ -1134,11 +1076,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Print Sheet</span>
+                  <span>Print</span>
                 </button>
               </div>
 
-              {/* Mandatory Confirmation Checkbox */}
               <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 text-left cursor-pointer hover:border-slate-600 transition">
                 <input
                   type="checkbox"
@@ -1147,7 +1088,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   className="mt-0.5 rounded border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer h-4 w-4"
                 />
                 <span className="text-[11px] text-slate-300 leading-snug">
-                  I confirm that I have safely copied, saved, or printed this Recovery Code offline.
+                  I confirm that I have safely copied or saved this Recovery Code.
                 </span>
               </label>
 
@@ -1164,7 +1105,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           )
         ) : (
           // =========================================================
-          // VIEW 2: SIGN IN / LOGIN FLOW (Credentials-based)
+          // VIEW 2: SIGN IN / LOGIN FLOW (Username / Store Name + PIN)
           // =========================================================
           <>
             {/* Role Access Switcher: Cashier vs Admin */}
@@ -1204,34 +1145,37 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
 
             {/* Login Form */}
-            <div className="space-y-4 text-left">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (roleTab === 'cashier') handleCashierLogin();
+                else handleAdminLogin();
+              }}
+              className="space-y-4 text-left"
+            >
               {/* Field 1: Username / Store Name Input */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Username / Store Name</span>
-                  </label>
-                  {roleTab === 'admin' && (
-                    <span className="text-[10px] text-slate-500">
-                      Optional if PIN is unique
-                    </span>
-                  )}
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Username / Store Name
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    value={enteredStoreName}
+                    onChange={(e) => {
+                      setEnteredStoreName(e.target.value);
+                      setErrorMsg(null);
+                    }}
+                    placeholder="Enter Username / Store Name"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 pl-9 pr-3 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
+                  />
                 </div>
-                <input
-                  type="text"
-                  value={enteredStoreName}
-                  onChange={(e) => {
-                    setEnteredStoreName(e.target.value);
-                    setErrorMsg(null);
-                  }}
-                  placeholder="Enter Username / Store Name"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
-                />
               </div>
 
-              {/* Role-specific fields */}
-              {roleTab === 'cashier' ? (
+              {/* Cashier profile selection if applicable */}
+              {roleTab === 'cashier' && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                     Select Cashier Profile
@@ -1255,18 +1199,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   ) : (
                     <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-900/50 text-xs text-amber-300">
                       {enteredStoreName.trim()
-                        ? 'No cashiers found for this account. Admin can add cashier profiles in Admin Settings.'
+                        ? 'No cashier profiles found for this account. Admin can create cashier profiles in Settings.'
                         : 'Enter your Username / Store Name above to load cashier profiles.'}
                     </div>
                   )}
-                </div>
-              ) : (
-                <div className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-900/50 text-xs text-indigo-300 flex items-center justify-between">
-                  <div>
-                    <span className="font-bold block text-white">Full Administrator Access</span>
-                    <span>Manage products, cashiers, stock, reports, and settings</span>
-                  </div>
-                  <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
                 </div>
               )}
 
@@ -1274,7 +1210,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-slate-300">
-                    {roleTab === 'cashier' ? 'Cashier Security PIN' : 'Admin Security PIN'}
+                    {roleTab === 'cashier' ? 'Cashier PIN' : 'Admin PIN'}
                   </label>
                   {roleTab === 'admin' ? (
                     <button
@@ -1301,76 +1237,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <div className="relative">
                   <input
                     type={showPin ? 'text' : 'password'}
+                    required
                     value={enteredPin}
                     maxLength={6}
                     onChange={(e) => {
                       setEnteredPin(e.target.value);
                       setErrorMsg(null);
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        if (roleTab === 'cashier') handleCashierLogin();
-                        else handleAdminLogin();
-                      }
-                    }}
                     placeholder="••••"
                     autoFocus
-                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3 px-4 text-center text-xl font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-blue-500 shadow-inner"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-lg font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-blue-500"
                   />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setShowPin(!showPin)}
-                      className="text-slate-400 hover:text-white p-1"
-                    >
-                      {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                    {enteredPin.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleKeypadClear}
-                        className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-md bg-slate-800 cursor-pointer"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* On-screen Numeric Keypad for touchscreen POS operation */}
-              <div className="grid grid-cols-3 gap-2 pt-1">
-                {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
                   <button
-                    key={digit}
                     type="button"
-                    onClick={() => handleKeypadPress(digit)}
-                    className="py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-700/60 active:scale-95 text-white font-mono font-bold text-lg transition shadow-xs cursor-pointer"
+                    onClick={() => setShowPin(!showPin)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                   >
-                    {digit}
+                    {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={handleKeypadClear}
-                  className="py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-700/60 active:scale-95 text-slate-400 hover:text-white font-bold text-xs uppercase tracking-wider transition cursor-pointer"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleKeypadPress('0')}
-                  className="py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-700/60 active:scale-95 text-white font-mono font-bold text-lg transition shadow-xs cursor-pointer"
-                >
-                  0
-                </button>
-                <button
-                  type="button"
-                  onClick={handleKeypadBackspace}
-                  className="py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-700/60 active:scale-95 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
-                >
-                  <Delete className="w-5 h-5" />
-                </button>
+                </div>
               </div>
 
               {/* Error Alert */}
@@ -1383,10 +1268,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
               {/* Main Submit Action */}
               <button
-                type="button"
+                type="submit"
                 disabled={loading}
-                onClick={roleTab === 'cashier' ? () => handleCashierLogin() : () => handleAdminLogin()}
-                className={`w-full py-3.5 px-4 rounded-2xl font-bold text-white text-sm shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                className={`w-full py-3 px-4 rounded-xl font-bold text-white text-sm shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   roleTab === 'cashier'
                     ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/30'
                     : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
@@ -1401,11 +1285,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </span>
                 <ArrowRight className="w-4 h-4" />
               </button>
-            </div>
+            </form>
 
             {/* Footer Notice */}
             <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80 space-y-1">
-              <div>Multi-Account Credentials • Protected Offline Database</div>
+              <div>IndexedDB Encrypted Credentials • Offline Operations</div>
             </div>
           </>
         )}
@@ -1445,13 +1329,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     Offline Local Validation
                   </p>
                   <p>
-                    Enter the Recovery Code generated when your account was registered (e.g. <code>RC-XXXX-XXXX-XXXX</code>). All business records remain completely safe.
+                    Enter the Recovery Code generated when your account was registered.
                   </p>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Username / Store Name (Optional if unique)
+                    Username / Store Name
                   </label>
                   <input
                     type="text"
@@ -1507,7 +1391,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   <div>
                     <h3 className="font-bold text-lg text-white">Set New Admin PIN</h3>
                     <p className="text-xs text-slate-400">
-                      Step 2 of 3: Recovery Code verified. Enter your new Admin PIN
+                      Step 2 of 3: Enter your new Admin PIN
                     </p>
                   </div>
                 </div>
@@ -1574,12 +1458,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </div>
                 <h3 className="font-bold text-lg text-white">Save Replacement Recovery Code</h3>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Your new Admin PIN is saved! Your previous Recovery Code has been <strong>invalidated</strong>. Save your new replacement code below:
+                  Your new PIN is saved! Save your new replacement recovery code below:
                 </p>
 
                 <div className="bg-slate-950 p-4 rounded-2xl border border-emerald-500/40 space-y-2">
                   <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
-                    New Active Recovery Code (Single-Use)
+                    New Active Recovery Code
                   </span>
                   <div className="text-lg md:text-xl font-mono font-black text-amber-300 tracking-wider select-all py-1">
                     {replacementCode}
@@ -1601,7 +1485,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Download .txt</span>
+                    <span>Download</span>
                   </button>
                   <button
                     type="button"
@@ -1609,7 +1493,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     className="py-2.5 px-2 rounded-xl border border-slate-700 font-semibold text-slate-200 hover:bg-slate-700/60 text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Print Sheet</span>
+                    <span>Print</span>
                   </button>
                 </div>
 
@@ -1621,7 +1505,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     className="mt-0.5 rounded border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer h-4 w-4"
                   />
                   <span className="text-[11px] text-slate-300 leading-snug">
-                    I have safely copied, saved, or printed this replacement Recovery Code offline.
+                    I have safely saved this replacement Recovery Code offline.
                   </span>
                 </label>
 
@@ -1631,7 +1515,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   onClick={handleFinishRecoveryAndLogin}
                   className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <span>Finish Recovery & Unlock Admin Dashboard</span>
+                  <span>Finish Recovery & Unlock Dashboard</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
@@ -1671,7 +1555,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     <PhoneCall className="w-3.5 h-3.5 text-blue-400" /> Next Step:
                   </p>
                   <p>
-                    Please inform your Store Administrator. Once approved in the Admin Dashboard, the Admin will provide you with a temporary PIN.
+                    Please inform your Store Administrator to approve and generate a temporary PIN.
                   </p>
                 </div>
 
@@ -1710,7 +1594,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     rows={2}
                     value={resetReason}
                     onChange={(e) => setResetReason(e.target.value)}
-                    placeholder="e.g. Forgot my 4-digit PIN..."
+                    placeholder="e.g. Forgot my PIN..."
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-xs text-white placeholder-slate-600"
                   />
                 </div>
