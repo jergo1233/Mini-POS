@@ -24,6 +24,8 @@ import {
   saveResetRequest,
   getSettings,
   saveSettings,
+  getAppState,
+  saveAppState,
 } from '../db/indexedDB';
 import { safeFetchJson } from '../utils/apiHelper';
 
@@ -46,22 +48,18 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
   );
   const [syncState, setSyncState] = useState<SyncState>('synced');
   const [pendingCount, setPendingCount] = useState<number>(0);
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem('pos_last_sync_time');
-    } catch {
-      return null;
-    }
-  });
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<any[]>(() => {
-    try {
-      const saved = localStorage.getItem('pos_notifications');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  useEffect(() => {
+    getAppState<string>('last_sync_time').then((val) => {
+      if (val) setLastSyncTime(val);
+    });
+    getAppState<any[]>('notifications', []).then((val) => {
+      if (val) setNotifications(val);
+    });
+  }, []);
   const isSyncingRef = useRef<boolean>(false);
 
   const refreshPendingCount = useCallback(async () => {
@@ -93,13 +91,12 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
       const payload = await getPendingSyncPayload();
       const currentSettings = await getSettings();
 
-      // Detect active user name and role from sessionStorage
+      // Detect active user name and role from IndexedDB AppState
       let clientName = 'Admin';
       let clientRole = 'admin';
       try {
-        const sessionStr = sessionStorage.getItem('pos_active_session');
-        if (sessionStr) {
-          const session = JSON.parse(sessionStr);
+        const session = await getAppState<any>('active_session');
+        if (session) {
           clientName = session.name || 'Store Admin';
           clientRole = session.role || 'admin';
         }
@@ -168,7 +165,7 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
         if (remoteNotifs && remoteNotifs.length > 0) {
           setNotifications(remoteNotifs);
           try {
-            localStorage.setItem('pos_notifications', JSON.stringify(remoteNotifs));
+            await saveAppState('notifications', remoteNotifs);
           } catch (e) {
             // ignore
           }
@@ -240,7 +237,7 @@ export function useSyncManager(onDataUpdated?: () => void): SyncManagerReturn {
       const nowIso = new Date().toISOString();
       setLastSyncTime(nowIso);
       try {
-        localStorage.setItem('pos_last_sync_time', nowIso);
+        await saveAppState('last_sync_time', nowIso);
       } catch (e) {
         // ignore
       }

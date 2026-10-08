@@ -41,7 +41,10 @@ import {
   addProductHistoryLog,
   getAllProductHistory,
   clearProductHistory,
-  saveCategory
+  saveCategory,
+  getAppState,
+  saveAppState,
+  removeAppState,
 } from '../db/indexedDB';
 import { BarcodeRenderer } from './BarcodeRenderer';
 import { BarcodeModal } from './BarcodeModal';
@@ -89,13 +92,14 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [deleting, setDeleting] = useState(false);
 
   // Admin PIN Protection states for Add / Edit / Restock
-  const [adminUnlocked, setAdminUnlocked] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem('pos_admin_product_unlocked') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [adminUnlocked, setAdminUnlocked] = useState<boolean>(false);
+
+  useEffect(() => {
+    getAppState<boolean>('admin_product_unlocked', false).then((res) => {
+      if (res) setAdminUnlocked(true);
+    });
+  }, []);
+
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinActionType, setPinActionType] = useState<'add' | 'edit' | 'restock' | null>(null);
   const [pendingEditProduct, setPendingEditProduct] = useState<Product | null>(null);
@@ -115,14 +119,10 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
   const handleSetAdminUnlocked = (unlocked: boolean) => {
     setAdminUnlocked(unlocked);
-    try {
-      if (unlocked) {
-        sessionStorage.setItem('pos_admin_product_unlocked', 'true');
-      } else {
-        sessionStorage.removeItem('pos_admin_product_unlocked');
-      }
-    } catch (e) {
-      console.debug('Session storage note:', e);
+    if (unlocked) {
+      saveAppState('admin_product_unlocked', true);
+    } else {
+      removeAppState('admin_product_unlocked');
     }
   };
 

@@ -43,6 +43,9 @@ import {
   getAllProducts,
   getAllCategories,
   getAllTransactions,
+  getAppState,
+  saveAppState,
+  removeAppState,
   getAllCustomers,
   clearAllData,
   DEFAULT_SETTINGS,
@@ -266,10 +269,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
 
     try {
-      const savedDate = localStorage.getItem('pos_last_backup_date');
-      setLastBackupDate(savedDate);
+      const savedDate = await getAppState<string>('last_backup_date');
+      setLastBackupDate(savedDate || null);
     } catch (e) {
-      console.debug('LocalStorage note:', e);
+      console.debug('IndexedDB note:', e);
     }
   };
 
@@ -494,7 +497,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       await exportFullBusinessBackupZip();
       const now = new Date().toISOString();
       setLastBackupDate(now);
-      localStorage.setItem('pos_last_backup_date', now);
+      await saveAppState('last_backup_date', now);
       setExportSuccessMessage('Full Business Backup (.zip) generated successfully!');
       setTimeout(() => setExportSuccessMessage(null), 6000);
     } catch (err) {
@@ -626,11 +629,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         isSetup: true,
       });
 
-      // Clear localStorage cache for backup date
+      // Clear backup date in IndexedDB AppState
       try {
-        localStorage.removeItem('pos_last_backup_date');
+        await removeAppState('last_backup_date');
       } catch (e) {
-        console.debug('LocalStorage note:', e);
+        console.debug('IndexedDB note:', e);
       }
 
       await loadStats();

@@ -24,6 +24,9 @@ import {
   clearAllData,
   getSettings,
   saveSettings,
+  getAppState,
+  saveAppState,
+  removeAppState,
 } from '../db/indexedDB';
 import {
   exportFullBusinessBackupZip,
@@ -98,10 +101,10 @@ export const BackupTransferView: React.FC<BackupTransferViewProps> = ({
     }
 
     try {
-      const savedDate = localStorage.getItem('pos_last_backup_date');
-      setLastBackupDate(savedDate);
+      const savedDate = await getAppState<string>('last_backup_date');
+      setLastBackupDate(savedDate || null);
     } catch (e) {
-      console.debug('LocalStorage note:', e);
+      console.debug('IndexedDB state note:', e);
     }
   };
 
@@ -115,7 +118,7 @@ export const BackupTransferView: React.FC<BackupTransferViewProps> = ({
       await exportFullBusinessBackupZip();
       const now = new Date().toISOString();
       setLastBackupDate(now);
-      localStorage.setItem('pos_last_backup_date', now);
+      await saveAppState('last_backup_date', now);
       setExportSuccessMessage('Full Business Backup (.zip) generated successfully!');
       setTimeout(() => setExportSuccessMessage(null), 6000);
     } catch (err) {
@@ -239,7 +242,7 @@ export const BackupTransferView: React.FC<BackupTransferViewProps> = ({
       const currentSettings = await getSettings();
       await clearAllData(true);
       await saveSettings({ ...currentSettings, isSetup: true });
-      localStorage.removeItem('pos_last_backup_date');
+      await removeAppState('last_backup_date');
       await loadStats();
       onRefresh();
       alert('SUCCESS: All business records cleared. Admin PIN preserved.');

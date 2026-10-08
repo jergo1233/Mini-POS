@@ -986,11 +986,72 @@ export async function deleteCustomer(id: string): Promise<void> {
   });
 }
 
-// --- Store Accounts ---
-const STORE_LIST_LOCAL_KEY = 'pos_registered_stores_v1';
+// --- App State KV Store (Stored strictly in IndexedDB 'settings' object store) ---
+export async function getAppState<T = any>(key: string, defaultValue?: T, dbInstance?: IDBDatabase): Promise<T | undefined> {
+  try {
+    const db = dbInstance || (await openDB());
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('settings', 'readonly');
+        const store = tx.objectStore('settings');
+        const req = store.get(`app_state_${key}`);
+        req.onsuccess = () => {
+          if (req.result && req.result.value !== undefined) {
+            resolve(req.result.value);
+          } else {
+            resolve(defaultValue);
+          }
+        };
+        req.onerror = () => resolve(defaultValue);
+      } catch {
+        resolve(defaultValue);
+      }
+    });
+  } catch {
+    return defaultValue;
+  }
+}
 
+export async function saveAppState(key: string, value: any, dbInstance?: IDBDatabase): Promise<void> {
+  try {
+    const db = dbInstance || (await openDB());
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('settings', 'readwrite');
+        const store = tx.objectStore('settings');
+        store.put({ key: `app_state_${key}`, value });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export async function removeAppState(key: string, dbInstance?: IDBDatabase): Promise<void> {
+  try {
+    const db = dbInstance || (await openDB());
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction('settings', 'readwrite');
+        const store = tx.objectStore('settings');
+        store.delete(`app_state_${key}`);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    // ignore
+  }
+}
+
+// --- Store Accounts (IndexedDB Only) ---
 export async function getAllStoreAccounts(dbInstance?: IDBDatabase): Promise<StoreAccount[]> {
-  // First attempt from IndexedDB
   const db = dbInstance || (await openDB());
   return new Promise((resolve) => {
     try {
@@ -998,29 +1059,10 @@ export async function getAllStoreAccounts(dbInstance?: IDBDatabase): Promise<Sto
       const store = tx.objectStore('settings');
       const req = store.get('app_stores_list');
       req.onsuccess = () => {
-        let list: StoreAccount[] = req.result ? req.result.value : [];
+        const list: StoreAccount[] = req.result ? req.result.value : [];
         if (Array.isArray(list) && list.length > 0) {
-          try {
-            localStorage.setItem(STORE_LIST_LOCAL_KEY, JSON.stringify(list));
-          } catch (e) {
-            // ignore
-          }
           resolve(list);
           return;
-        }
-
-        // Check fallback from localStorage
-        try {
-          const localSaved = localStorage.getItem(STORE_LIST_LOCAL_KEY);
-          if (localSaved) {
-            const parsed = JSON.parse(localSaved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              resolve(parsed);
-              return;
-            }
-          }
-        } catch (e) {
-          // ignore
         }
 
         // Check if there was an existing single-store setup in app_settings
@@ -1042,57 +1084,21 @@ export async function getAllStoreAccounts(dbInstance?: IDBDatabase): Promise<Sto
               createdAt: new Date().toISOString(),
               isSetup: true,
             };
-            const singleList = [defaultAccount];
-            try {
-              localStorage.setItem(STORE_LIST_LOCAL_KEY, JSON.stringify(singleList));
-            } catch (e) {
-              // ignore
-            }
-            resolve(singleList);
+            resolve([defaultAccount]);
           } else {
             resolve([]);
           }
         };
         settingsReq.onerror = () => resolve([]);
       };
-      req.onerror = () => {
-        // Fallback to localStorage on error
-        try {
-          const localSaved = localStorage.getItem(STORE_LIST_LOCAL_KEY);
-          if (localSaved) {
-            const parsed = JSON.parse(localSaved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              resolve(parsed);
-              return;
-            }
-          }
-        } catch {}
-        resolve([]);
-      };
+      req.onerror = () => resolve([]);
     } catch {
-      // Fallback to localStorage
-      try {
-        const localSaved = localStorage.getItem(STORE_LIST_LOCAL_KEY);
-        if (localSaved) {
-          const parsed = JSON.parse(localSaved);
-          if (Array.isArray(parsed)) {
-            resolve(parsed);
-            return;
-          }
-        }
-      } catch {}
       resolve([]);
     }
   });
 }
 
 export async function saveStoreAccountsList(accounts: StoreAccount[], dbInstance?: IDBDatabase): Promise<void> {
-  try {
-    localStorage.setItem(STORE_LIST_LOCAL_KEY, JSON.stringify(accounts));
-  } catch (e) {
-    // ignore
-  }
-
   const db = dbInstance || (await openDB());
   return new Promise((resolve) => {
     try {
@@ -1100,7 +1106,7 @@ export async function saveStoreAccountsList(accounts: StoreAccount[], dbInstance
       const store = tx.objectStore('settings');
       const req = store.put({ key: 'app_stores_list', value: accounts });
       req.onsuccess = () => resolve();
-      req.onerror = () => resolve(); // Always resolve so UI doesn't hang
+      req.onerror = () => resolve();
     } catch {
       resolve();
     }
@@ -1432,7 +1438,7 @@ export async function createPreMergeSafetySnapshot(): Promise<boolean> {
       categoriesCount: categories.length,
       settings,
     };
-    localStorage.setItem('pos_pre_merge_backup', JSON.stringify(snapshot));
+    await saveAppState('pre_merge_backup', snapshot);
     return true;
   } catch (err) {
     console.warn('Safety snapshot creation warning:', err);

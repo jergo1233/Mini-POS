@@ -42,6 +42,8 @@ import {
   saveResetRequest,
   CashierResetRequest,
   openDB,
+  getAppState,
+  saveAppState,
 } from '../db/indexedDB';
 import {
   createAdminAuthCredentials,
@@ -151,7 +153,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         setEnteredStoreName('');
       } else {
         // If there's a last used store/username, pre-populate for convenience
-        const lastStore = localStorage.getItem('pos_last_store_name');
+        const lastStore = await getAppState<string>('last_store_name');
         if (lastStore && accounts.some((a) => a.storeName.trim().toLowerCase() === lastStore.trim().toLowerCase())) {
           setEnteredStoreName(lastStore);
         } else if (accounts.length === 1) {
@@ -297,8 +299,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       // Successful Admin Authentication
       try {
-        localStorage.setItem('pos_last_store_name', targetStore.storeName);
-        localStorage.setItem('pos_last_store_id', targetStore.id);
+        await saveAppState('last_store_name', targetStore.storeName);
+        await saveAppState('last_store_id', targetStore.id);
       } catch {}
 
       const storeSettings = await getSettings(targetStore.id);
@@ -358,8 +360,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           const matchedCashier = matching[0];
           const foundStore = accounts.find((s) => s.id === matchedCashier.storeId) || accounts[0];
           try {
-            localStorage.setItem('pos_last_store_name', foundStore.storeName);
-            localStorage.setItem('pos_last_store_id', foundStore.id);
+            await saveAppState('last_store_name', foundStore.storeName);
+            await saveAppState('last_store_id', foundStore.id);
           } catch {}
 
           onLoginSuccess({
@@ -411,8 +413,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       }
 
       try {
-        localStorage.setItem('pos_last_store_name', targetStore.storeName);
-        localStorage.setItem('pos_last_store_id', targetStore.id);
+        await saveAppState('last_store_name', targetStore.storeName);
+        await saveAppState('last_store_id', targetStore.id);
       } catch {}
 
       onLoginSuccess({
@@ -589,12 +591,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     printWindow.document.close();
   };
 
-  const handleCompleteSetupAndLogin = () => {
+  const handleCompleteSetupAndLogin = async () => {
     if (!setupConfirmedSaved) return;
 
     try {
-      localStorage.setItem('pos_last_store_name', setupStoreName.trim());
-      localStorage.setItem('pos_last_store_id', registeredStoreId);
+      await saveAppState('last_store_name', setupStoreName.trim());
+      await saveAppState('last_store_id', registeredStoreId);
     } catch {}
 
     onLoginSuccess({
@@ -882,8 +884,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     try {
       if (targetStore) {
-        localStorage.setItem('pos_last_store_name', targetStore.storeName);
-        localStorage.setItem('pos_last_store_id', targetStore.id);
+        await saveAppState('last_store_name', targetStore.storeName);
+        await saveAppState('last_store_id', targetStore.id);
       }
     } catch {}
 

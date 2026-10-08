@@ -32,6 +32,7 @@ import {
   saveResetRequest,
   clearAllData,
   createPreMergeSafetySnapshot,
+  saveAppState,
   Product,
   Category,
   Transaction,
@@ -243,7 +244,7 @@ export async function exportFullBusinessBackupZip(): Promise<void> {
   triggerBlobDownload(zipContent, `${safeStore}-full-backup-${dateStr}.zip`);
 
   try {
-    localStorage.setItem('pos_last_backup_date', new Date().toISOString());
+    await saveAppState('last_backup_date', new Date().toISOString());
   } catch (e) {
     // ignore
   }

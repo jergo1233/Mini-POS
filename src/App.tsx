@@ -19,7 +19,10 @@ import {
   Settings,
   Cashier,
   CashierResetRequest,
-  DEFAULT_SETTINGS
+  DEFAULT_SETTINGS,
+  getAppState,
+  saveAppState,
+  removeAppState,
 } from './db/indexedDB';
 import { Sidebar, TabType } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
@@ -44,40 +47,33 @@ export default function App() {
   const [showMoreModal, setShowMoreModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Authentication & Session State (Persisted in both sessionStorage & localStorage)
-  const [currentSession, setCurrentSession] = useState<AuthSession | null>(() => {
-    try {
-      const saved = sessionStorage.getItem('pos_active_session') || localStorage.getItem('pos_active_session');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  // Authentication & Session State (Persisted in IndexedDB)
+  const [currentSession, setCurrentSession] = useState<AuthSession | null>(null);
+  const [isLocked, setIsLocked] = useState<boolean>(false);
 
-  // Terminal Lock state — persistent for Cashiers across page refreshes
-  const [isLocked, setIsLocked] = useState<boolean>(() => {
-    try {
-      const saved = sessionStorage.getItem('pos_terminal_locked') || localStorage.getItem('pos_terminal_locked');
-      return saved === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  // Keep storage in sync whenever isLocked changes
+  // Initialize session & lock state from IndexedDB on startup
   useEffect(() => {
-    try {
-      if (currentSession?.role === 'cashier') {
-        if (isLocked) {
-          sessionStorage.setItem('pos_terminal_locked', 'true');
-          localStorage.setItem('pos_terminal_locked', 'true');
-        } else {
-          sessionStorage.removeItem('pos_terminal_locked');
-          localStorage.removeItem('pos_terminal_locked');
-        }
+    const initSession = async () => {
+      try {
+        const savedSession = await getAppState<AuthSession>('active_session');
+        const savedLock = await getAppState<boolean>('terminal_locked', false);
+        if (savedSession) setCurrentSession(savedSession);
+        if (savedLock) setIsLocked(true);
+      } catch (e) {
+        console.debug('Failed loading session from IndexedDB:', e);
       }
-    } catch (e) {
-      // ignore
+    };
+    initSession();
+  }, []);
+
+  // Sync terminal lock state to IndexedDB when changed
+  useEffect(() => {
+    if (currentSession?.role === 'cashier') {
+      if (isLocked) {
+        saveAppState('terminal_locked', true);
+      } else {
+        removeAppState('terminal_locked');
+      }
     }
   }, [isLocked, currentSession]);
 
@@ -130,14 +126,14 @@ export default function App() {
     window.addEventListener('pos-navigate', handleNavigate);
 
     // Listen for store switching events
-    const handleSwitchStore = (e: any) => {
+    const handleSwitchStore = async (e: any) => {
       setCurrentSession(null);
       setIsLocked(false);
       try {
-        sessionStorage.removeItem('pos_active_session');
-        localStorage.removeItem('pos_active_session');
+        await removeAppState('active_session');
+        await removeAppState('terminal_locked');
         if (e.detail) {
-          localStorage.setItem('pos_preferred_store_id', e.detail);
+          await saveAppState('preferred_store_id', e.detail);
         }
       } catch (err) {}
     };
@@ -168,8 +164,7 @@ export default function App() {
       timeoutId = setTimeout(() => {
         setIsLocked(true);
         try {
-          sessionStorage.setItem('pos_terminal_locked', 'true');
-          localStorage.setItem('pos_terminal_locked', 'true');
+          saveAppState('terminal_locked', true);
         } catch (e) {
           // ignore
         }
@@ -186,17 +181,11 @@ export default function App() {
     };
   }, [currentSession, isLocked, settings.autoLockMinutes]);
 
-  const handleLoginSuccess = (session: AuthSession) => {
+  const handleLoginSuccess = async (session: AuthSession) => {
     setCurrentSession(session);
     setIsLocked(false);
-    try {
-      sessionStorage.setItem('pos_active_session', JSON.stringify(session));
-      localStorage.setItem('pos_active_session', JSON.stringify(session));
-      sessionStorage.removeItem('pos_terminal_locked');
-      localStorage.removeItem('pos_terminal_locked');
-    } catch (e) {
-      console.debug('Storage warning:', e);
-    }
+    await saveAppState('active_session', session);
+    await removeAppState('terminal_locked');
 
     // Role-based initial tab
     if (session.role === 'cashier') {
@@ -206,42 +195,26 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (!window.confirm('Are you sure you want to sign out?')) return;
     
     setCurrentSession(null);
     setIsLocked(false);
-    try {
-      sessionStorage.removeItem('pos_active_session');
-      localStorage.removeItem('pos_active_session');
-      sessionStorage.removeItem('pos_terminal_locked');
-      localStorage.removeItem('pos_terminal_locked');
-    } catch (e) {
-      // ignore
-    }
+    await removeAppState('active_session');
+    await removeAppState('terminal_locked');
   };
 
-  const handleManualLock = () => {
+  const handleManualLock = async () => {
     // Only lock terminal for Cashier role
     if (currentSession?.role === 'cashier') {
       setIsLocked(true);
-      try {
-        sessionStorage.setItem('pos_terminal_locked', 'true');
-        localStorage.setItem('pos_terminal_locked', 'true');
-      } catch (e) {
-        // ignore
-      }
+      await saveAppState('terminal_locked', true);
     }
   };
 
-  const handleUnlock = () => {
+  const handleUnlock = async () => {
     setIsLocked(false);
-    try {
-      sessionStorage.removeItem('pos_terminal_locked');
-      localStorage.removeItem('pos_terminal_locked');
-    } catch (e) {
-      // ignore
-    }
+    await removeAppState('terminal_locked');
   };
 
   // Enforce role-based tab restrictions
