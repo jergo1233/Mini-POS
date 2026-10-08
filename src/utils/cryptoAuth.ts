@@ -123,15 +123,15 @@ export async function verifyAdminPin(
   // Modern salted hash check
   if (settings.adminPinHash && settings.adminPinSalt) {
     const computed = await hashSecretWithSalt(cleanPin, settings.adminPinSalt);
-    return computed === settings.adminPinHash;
+    if (computed === settings.adminPinHash) return true;
   }
 
-  // Legacy plain text check fallback
-  if (settings.adminPin) {
-    return cleanPin === settings.adminPin;
+  // Plain text check fallback
+  if (settings.adminPin && cleanPin === settings.adminPin.trim()) {
+    return true;
   }
 
-  // If no credentials configured, reject
+  // If no credentials matched, reject
   return false;
 }
 
