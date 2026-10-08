@@ -2,6 +2,7 @@
  * Product Management View Component
  */
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Search,
@@ -1068,8 +1069,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       )}
 
       {/* --- QUICK RESTOCK MODAL --- */}
-      {restockProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 pb-20 md:pb-4 backdrop-blur-sm animate-in fade-in duration-200">
+      {restockProduct && createPortal(
+        <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-[9999] flex items-center justify-center bg-black/70 p-4 pb-20 md:pb-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 my-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
@@ -1182,12 +1183,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* --- ADMIN PIN VERIFICATION MODAL FOR ADD/EDIT/RESTOCK --- */}
-      {showPinModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 pb-20 md:pb-4 backdrop-blur-sm animate-in fade-in duration-200">
+      {showPinModal && createPortal(
+        <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-[9999] flex items-center justify-center bg-black/70 p-4 pb-20 md:pb-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 my-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
@@ -1287,12 +1289,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* --- DELETE PRODUCT MODAL WITH ADMIN PIN --- */}
-      {productToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 pb-20 md:pb-4 backdrop-blur-sm animate-in fade-in duration-200">
+      {productToDelete && createPortal(
+        <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-[9999] flex items-center justify-center bg-black/70 p-4 pb-20 md:pb-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-red-200 dark:border-red-900/60 my-auto">
             <div className="flex items-center justify-between pb-4 border-b border-red-100 dark:border-red-950/60">
               <div className="flex items-center gap-2.5">
@@ -1352,14 +1355,15 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* --- ADD / EDIT PRODUCT MODAL --- */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-2 sm:p-4 pb-20 md:pb-4 backdrop-blur-sm">
+      {showModal && createPortal(
+        <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-[9999] overflow-y-auto bg-black/70 p-2 sm:p-4 pb-20 md:pb-4 backdrop-blur-sm">
           <div className="min-h-full flex items-center justify-center p-1 sm:p-3 text-left">
-            <div className="w-full max-w-xl max-h-[calc(100dvh-5.5rem)] md:max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 my-auto transform transition-all overflow-hidden">
+            <div className="w-full max-w-lg md:max-w-[480px] lg:max-w-xl max-h-[calc(100dvh-5.5rem)] md:max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 my-auto transform transition-all overflow-hidden">
               {/* Pinned Modal Header */}
               <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 z-10">
                 <div className="flex items-center gap-2.5">
@@ -1724,9 +1728,10 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                   )}
                 </div>
               </form>
+            </div>
           </div>
-        </div>
-      </div>
+        </div>,
+        document.body
       )}
 
       {/* Barcode Print Modal */}
