@@ -414,7 +414,7 @@ export async function getAllProducts(
         let list = (request.result || []) as Product[];
         if (targetStoreId) {
           list = list.filter(
-            (p) => !p.storeId || p.storeId === targetStoreId || (targetStoreId === 'store-main' && !p.storeId)
+            (p) => p.storeId === targetStoreId || (!p.storeId && targetStoreId === 'store-main')
           );
         }
         resolve(list);
@@ -765,7 +765,7 @@ export async function getAllCashiers(
         let list = (req.result || []) as Cashier[];
         if (targetStoreId) {
           list = list.filter(
-            (c) => !c.storeId || c.storeId === targetStoreId || (targetStoreId === 'store-main' && !c.storeId)
+            (c) => c.storeId === targetStoreId || (!c.storeId && targetStoreId === 'store-main')
           );
         }
         resolve(list);
@@ -1131,6 +1131,13 @@ export async function deleteStoreAccount(id: string): Promise<void> {
   } catch (e) {
     // ignore
   }
+}
+
+export async function findStoreAccountByName(name: string, dbInstance?: IDBDatabase): Promise<StoreAccount | null> {
+  const clean = (name || '').trim().toLowerCase();
+  if (!clean) return null;
+  const accounts = await getAllStoreAccounts(dbInstance);
+  return accounts.find((a) => a.storeName.trim().toLowerCase() === clean) || null;
 }
 
 // --- Settings ---

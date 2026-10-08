@@ -23,6 +23,10 @@ import {
   EyeOff,
   ShieldCheck,
   X,
+  LogIn,
+  PlusCircle,
+  Building2,
+  Delete,
 } from 'lucide-react';
 import {
   Cashier,
@@ -38,7 +42,6 @@ import {
   CashierResetRequest,
   openDB,
 } from '../db/indexedDB';
-import { safeFetchJson } from '../utils/apiHelper';
 import {
   createAdminAuthCredentials,
   verifyAdminPin,
@@ -69,19 +72,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   isOnline,
   onTriggerSync,
 }) => {
+  // Top-level mode: 'login' | 'register'
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  
+  // Login Role Tab: 'cashier' | 'admin'
   const [roleTab, setRoleTab] = useState<'cashier' | 'admin'>('cashier');
-  const [cashiers, setCashiers] = useState<Cashier[]>([]);
-  const [selectedCashierId, setSelectedCashierId] = useState<string>('');
+
+  // Input credentials
+  const [enteredStoreName, setEnteredStoreName] = useState<string>('');
   const [enteredPin, setEnteredPin] = useState<string>('');
   const [showPin, setShowPin] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Multi-Store states
+  // Cashier Selection
+  const [cashiers, setCashiers] = useState<Cashier[]>([]);
+  const [selectedCashierId, setSelectedCashierId] = useState<string>('');
+
+  // Multi-Store registered accounts list (held in memory only for auth verification, NOT displayed as a public dropdown)
   const [storeAccounts, setStoreAccounts] = useState<StoreAccount[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
-  const [activeStoreSettings, setActiveStoreSettings] = useState<Settings>(settings);
-  const [isRegisteringNewStore, setIsRegisteringNewStore] = useState(false);
 
   // Cashier Forgot PIN Request Modal
   const [showCashierResetModal, setShowCashierResetModal] = useState(false);
@@ -91,6 +100,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   // Admin Forgot PIN & Offline Recovery Modal States
   const [showForgotAdminModal, setShowForgotAdminModal] = useState(false);
+  const [recoveryStoreName, setRecoveryStoreName] = useState('');
   const [recoveryStep, setRecoveryStep] = useState<'enterCode' | 'newPin' | 'saveReplacement'>('enterCode');
   const [recoveryEnteredCode, setRecoveryEnteredCode] = useState('');
   const [recoveryNewPin, setRecoveryNewPin] = useState('');
@@ -101,13 +111,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [recoveryFailedAttempts, setRecoveryFailedAttempts] = useState(0);
   const [lockoutRemainingSecs, setLockoutRemainingSecs] = useState(0);
 
-  // First-time Setup states
-  const [setupPin, setSetupPin] = useState('');
-  const [setupConfirmPin, setSetupConfirmPin] = useState('');
+  // Registration / First-Time Setup states
+  const [setupStep, setSetupStep] = useState<'form' | 'recoveryCode'>('form');
   const [setupStoreName, setSetupStoreName] = useState('');
   const [setupOwnerName, setSetupOwnerName] = useState('');
+  const [setupPin, setSetupPin] = useState('');
+  const [setupConfirmPin, setSetupConfirmPin] = useState('');
   const [generatedRecoveryCode, setGeneratedRecoveryCode] = useState('');
-  const [setupStep, setSetupStep] = useState<'form' | 'recoveryCode'>('form');
+  const [registeredStoreId, setRegisteredStoreId] = useState('');
   const [setupCopied, setSetupCopied] = useState(false);
   const [setupConfirmedSaved, setSetupConfirmedSaved] = useState(false);
 
@@ -126,148 +137,175 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     return () => clearInterval(timer);
   }, [lockoutRemainingSecs]);
 
-  // Load all registered store accounts
-  const loadStoreAccounts = async (preferredStoreId?: string) => {
-    let prefId = preferredStoreId;
+  // Load all registered store accounts into memory
+  const refreshStoreAccounts = async () => {
     try {
-      const storedPref = localStorage.getItem('pos_preferred_store_id');
-      if (storedPref) {
-        prefId = storedPref;
-        localStorage.removeItem('pos_preferred_store_id');
-      }
-    } catch {}
+      const accounts = await getAllStoreAccounts();
+      setStoreAccounts(accounts);
 
-    if (prefId === '__add_new__') {
-      setIsRegisteringNewStore(true);
-      setSetupStep('form');
-      setSetupStoreName('');
-      setSetupOwnerName('');
-      setSetupPin('');
-      setSetupConfirmPin('');
-      setErrorMsg(null);
-      const list = await getAllStoreAccounts();
-      setStoreAccounts(list);
-      return;
-    }
-
-    const list = await getAllStoreAccounts();
-    setStoreAccounts(list);
-    if (list.length > 0) {
-      const targetId = prefId || selectedStoreId;
-      const current = targetId && list.some((s) => s.id === targetId) ? targetId : list[0].id;
-      setSelectedStoreId(current);
-      const sets = await getSettings(current);
-      setActiveStoreSettings(sets);
-      const cashList = await getAllCashiers(current);
-      setCashiers(cashList);
-      if (cashList.length > 0) {
-        setSelectedCashierId(cashList[0].id);
+      // If zero stores registered, default mode to 'register' (initial setup)
+      if (accounts.length === 0) {
+        setAuthMode('register');
+        setSetupStep('form');
+        setEnteredStoreName('');
       } else {
-        setSelectedCashierId('');
+        // If there's a last used store, pre-populate store name input
+        const lastStore = localStorage.getItem('pos_last_store_name');
+        if (lastStore && accounts.some((a) => a.storeName.trim().toLowerCase() === lastStore.trim().toLowerCase())) {
+          setEnteredStoreName(lastStore);
+        } else if (accounts.length === 1) {
+          // If only 1 store registered on this terminal, prefill it for convenience
+          setEnteredStoreName(accounts[0].storeName);
+        }
       }
-    } else {
-      setIsRegisteringNewStore(true);
+    } catch (e) {
+      console.warn('Failed loading store accounts:', e);
     }
   };
 
   useEffect(() => {
-    loadStoreAccounts();
+    refreshStoreAccounts();
   }, []);
 
-  // Load settings and cashiers whenever selected store changes
+  // Whenever enteredStoreName changes, attempt to load cashiers for that store
   useEffect(() => {
-    if (!selectedStoreId || isRegisteringNewStore) return;
-
-    const loadStoreDetails = async () => {
-      const sets = await getSettings(selectedStoreId);
-      setActiveStoreSettings(sets);
-      const cashList = await getAllCashiers(selectedStoreId);
-      setCashiers(cashList);
-      if (cashList.length > 0) {
-        setSelectedCashierId(cashList[0].id);
+    const clean = enteredStoreName.trim().toLowerCase();
+    if (!clean || storeAccounts.length === 0) {
+      if (storeAccounts.length === 1) {
+        getAllCashiers(storeAccounts[0].id).then((list) => {
+          setCashiers(list);
+          if (list.length > 0 && !selectedCashierId) {
+            setSelectedCashierId(list[0].id);
+          }
+        });
       } else {
+        setCashiers([]);
         setSelectedCashierId('');
       }
-    };
+      return;
+    }
 
-    loadStoreDetails();
-  }, [selectedStoreId, isRegisteringNewStore]);
+    const matchedStore = storeAccounts.find((s) => s.storeName.trim().toLowerCase() === clean);
+    if (matchedStore) {
+      getAllCashiers(matchedStore.id).then((list) => {
+        setCashiers(list);
+        if (list.length > 0) {
+          setSelectedCashierId(list[0].id);
+        } else {
+          setSelectedCashierId('');
+        }
+      });
+    } else {
+      setCashiers([]);
+      setSelectedCashierId('');
+    }
+  }, [enteredStoreName, storeAccounts]);
 
-  // ----------------------------------------------------
-  // CASHIER LOGIN
-  // ----------------------------------------------------
-  const handleCashierLogin = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  // Keypad button click helper
+  const handleKeypadPress = (val: string) => {
     setErrorMsg(null);
-
-    const cashier = cashiers.find((c) => c.id === selectedCashierId);
-
-    if (!cashier) {
-      setErrorMsg('Please select a cashier profile.');
-      return;
+    if (enteredPin.length < 6) {
+      setEnteredPin((prev) => prev + val);
     }
+  };
 
-    if (!enteredPin) {
-      setErrorMsg('Please enter your 4-digit Cashier PIN.');
-      return;
-    }
+  const handleKeypadBackspace = () => {
+    setErrorMsg(null);
+    setEnteredPin((prev) => prev.slice(0, -1));
+  };
 
-    if (cashier.pin !== enteredPin) {
-      setErrorMsg('Incorrect Cashier PIN. Please try again or request a reset.');
-      return;
-    }
-
-    if (!cashier.active) {
-      setErrorMsg('This cashier account is inactive. Please contact the Store Administrator.');
-      return;
-    }
-
-    onLoginSuccess({
-      role: 'cashier',
-      id: cashier.id,
-      name: cashier.name,
-      storeId: selectedStoreId || 'store-main',
-      storeName: activeStoreSettings.storeName || 'Store Account',
-      loginTime: new Date().toISOString(),
-      isOfflineLogin: !isOnline,
-    });
+  const handleKeypadClear = () => {
+    setEnteredPin('');
+    setErrorMsg(null);
   };
 
   // ----------------------------------------------------
-  // ADMIN LOGIN (Salted Hash Verification)
+  // ADMIN LOGIN (Credentials Verification)
   // ----------------------------------------------------
   const handleAdminLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMsg(null);
 
-    if (!enteredPin) {
-      setErrorMsg('Please enter the Admin PIN.');
+    const cleanPin = enteredPin.trim();
+    if (!cleanPin) {
+      setErrorMsg('Please enter your Admin PIN.');
       return;
     }
 
     setLoading(true);
     try {
-      const currentStoreAcc = storeAccounts.find((s) => s.id === selectedStoreId);
-      const authTarget = {
-        adminPin: activeStoreSettings.adminPin,
-        adminPinHash: currentStoreAcc?.adminPinHash || activeStoreSettings.adminPinHash,
-        adminPinSalt: currentStoreAcc?.adminPinSalt || activeStoreSettings.adminPinSalt,
-      };
-
-      const isMatch = await verifyAdminPin(enteredPin, authTarget);
-
-      if (!isMatch) {
-        setErrorMsg(`Incorrect Admin PIN for "${activeStoreSettings.storeName || currentStoreAcc?.storeName || 'Store'}". Please try again.`);
+      // Re-read store accounts from DB to ensure fresh data
+      const accounts = await getAllStoreAccounts();
+      if (accounts.length === 0) {
+        setErrorMsg('No registered store accounts found. Please register your store first.');
+        setAuthMode('register');
         setLoading(false);
         return;
       }
 
+      const cleanName = enteredStoreName.trim().toLowerCase();
+      let targetStore: StoreAccount | null = null;
+
+      if (cleanName) {
+        // User typed a store name: verify against that specific store
+        targetStore = accounts.find((s) => s.storeName.trim().toLowerCase() === cleanName) || null;
+        if (!targetStore) {
+          setErrorMsg(`Store "${enteredStoreName.trim()}" not found. Please verify the store name.`);
+          setLoading(false);
+          return;
+        }
+
+        const isMatch = await verifyAdminPin(cleanPin, {
+          adminPinHash: targetStore.adminPinHash,
+          adminPinSalt: targetStore.adminPinSalt,
+        });
+
+        if (!isMatch) {
+          setErrorMsg(`Incorrect Admin PIN for "${targetStore.storeName}". Please try again.`);
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Store name field was left blank:
+        // Test entered PIN across all registered stores
+        const matchingStores: StoreAccount[] = [];
+        for (const store of accounts) {
+          const isMatch = await verifyAdminPin(cleanPin, {
+            adminPinHash: store.adminPinHash,
+            adminPinSalt: store.adminPinSalt,
+          });
+          if (isMatch) {
+            matchingStores.push(store);
+          }
+        }
+
+        if (matchingStores.length === 1) {
+          targetStore = matchingStores[0];
+        } else if (matchingStores.length > 1) {
+          setErrorMsg('Multiple stores match this PIN. Please enter your Store Name above.');
+          setLoading(false);
+          return;
+        } else {
+          setErrorMsg('Incorrect Admin PIN. If you have multiple stores, please enter your Store Name.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Successful Admin Login
+      try {
+        localStorage.setItem('pos_last_store_name', targetStore.storeName);
+        localStorage.setItem('pos_last_store_id', targetStore.id);
+      } catch {}
+
+      const storeSettings = await getSettings(targetStore.id);
+
       onLoginSuccess({
         role: 'admin',
         id: 'admin',
-        name: activeStoreSettings.ownerName || currentStoreAcc?.ownerName || 'Store Administrator',
-        storeId: selectedStoreId || currentStoreAcc?.id || 'store-main',
-        storeName: activeStoreSettings.storeName || currentStoreAcc?.storeName || 'Store Account',
+        name: storeSettings.ownerName || targetStore.ownerName || 'Store Administrator',
+        storeId: targetStore.id,
+        storeName: targetStore.storeName,
         loginTime: new Date().toISOString(),
         isOfflineLogin: !isOnline,
       });
@@ -279,49 +317,138 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  const handlePinClear = () => {
-    setEnteredPin('');
+  // ----------------------------------------------------
+  // CASHIER LOGIN (Credentials Verification)
+  // ----------------------------------------------------
+  const handleCashierLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setErrorMsg(null);
-  };
 
-  // ----------------------------------------------------
-  // CASHIER RESET REQUEST
-  // ----------------------------------------------------
-  const handleSubmitCashierResetRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cashier = cashiers.find((c) => c.id === resetCashierId);
-    if (!cashier) return;
+    const cleanPin = enteredPin.trim();
+    if (!cleanPin) {
+      setErrorMsg('Please enter your 4-digit Cashier PIN.');
+      return;
+    }
 
-    const newRequest: CashierResetRequest = {
-      id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      cashierId: cashier.id,
-      cashierName: cashier.name,
-      status: 'pending',
-      requestedAt: new Date().toISOString(),
-      notes: resetReason.trim() || 'Forgot PIN / Requested reset from login screen',
-      syncStatus: isOnline ? 'synced' : 'pending',
-    };
-
+    setLoading(true);
     try {
-      await saveResetRequest(newRequest);
-      if (isOnline && onTriggerSync) {
-        onTriggerSync().catch(() => {});
+      const accounts = await getAllStoreAccounts();
+      const cleanName = enteredStoreName.trim().toLowerCase();
+      let targetStore: StoreAccount | null = null;
+
+      if (cleanName) {
+        targetStore = accounts.find((s) => s.storeName.trim().toLowerCase() === cleanName) || null;
+        if (!targetStore) {
+          setErrorMsg(`Store "${enteredStoreName.trim()}" not found. Please verify the store name.`);
+          setLoading(false);
+          return;
+        }
+      } else if (accounts.length === 1) {
+        targetStore = accounts[0];
       }
-      setResetSuccessNotice(
-        `Reset request registered for ${cashier.name}. Please contact the Store Administrator to receive your temporary PIN.`
-      );
-      setResetReason('');
+
+      if (!targetStore) {
+        // If store name not provided and multiple stores exist:
+        // Search across all cashiers
+        const allCashiers = await getAllCashiers();
+        const matching = allCashiers.filter((c) => c.pin === cleanPin && c.active);
+        if (matching.length === 1) {
+          const matchedCashier = matching[0];
+          const foundStore = accounts.find((s) => s.id === matchedCashier.storeId) || accounts[0];
+          try {
+            localStorage.setItem('pos_last_store_name', foundStore.storeName);
+            localStorage.setItem('pos_last_store_id', foundStore.id);
+          } catch {}
+
+          onLoginSuccess({
+            role: 'cashier',
+            id: matchedCashier.id,
+            name: matchedCashier.name,
+            storeId: foundStore.id,
+            storeName: foundStore.storeName,
+            loginTime: new Date().toISOString(),
+            isOfflineLogin: !isOnline,
+          });
+          return;
+        } else if (matching.length > 1) {
+          setErrorMsg('Multiple cashiers match this PIN. Please enter your Store Name.');
+          setLoading(false);
+          return;
+        } else {
+          setErrorMsg('Please enter your Store Name to identify your cashier profile.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Store identified: find cashier for this specific store
+      const storeCashiers = await getAllCashiers(targetStore.id);
+      let cashier = storeCashiers.find((c) => c.id === selectedCashierId);
+
+      if (!cashier) {
+        // Attempt match by entered PIN
+        cashier = storeCashiers.find((c) => c.pin === cleanPin);
+      }
+
+      if (!cashier) {
+        setErrorMsg('Incorrect Cashier PIN or profile not found for this store.');
+        setLoading(false);
+        return;
+      }
+
+      if (cashier.pin !== cleanPin) {
+        setErrorMsg('Incorrect Cashier PIN. Please try again or request a reset.');
+        setLoading(false);
+        return;
+      }
+
+      if (!cashier.active) {
+        setErrorMsg('This cashier account is inactive. Please contact the Store Administrator.');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        localStorage.setItem('pos_last_store_name', targetStore.storeName);
+        localStorage.setItem('pos_last_store_id', targetStore.id);
+      } catch {}
+
+      onLoginSuccess({
+        role: 'cashier',
+        id: cashier.id,
+        name: cashier.name,
+        storeId: targetStore.id,
+        storeName: targetStore.storeName,
+        loginTime: new Date().toISOString(),
+        isOfflineLogin: !isOnline,
+      });
     } catch (err) {
-      console.error('Failed submitting reset request:', err);
+      console.error('Cashier login error:', err);
+      setErrorMsg('Authentication error. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   // ----------------------------------------------------
-  // FIRST-TIME & MULTI-STORE SETUP: SUBMIT & GENERATE RECOVERY CODE
+  // STORE REGISTRATION (New Store / Initial Setup)
   // ----------------------------------------------------
   const handleSetupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+
+    const cleanStoreName = setupStoreName.trim();
+    const cleanOwnerName = setupOwnerName.trim();
+
+    if (!cleanStoreName) {
+      setErrorMsg('Store Name is required.');
+      return;
+    }
+
+    if (!cleanOwnerName) {
+      setErrorMsg('Store Owner / Admin Name is required.');
+      return;
+    }
 
     if (setupPin.length < 4 || setupPin.length > 6 || !/^\d+$/.test(setupPin)) {
       setErrorMsg('Admin PIN must be between 4 to 6 numeric digits.');
@@ -333,26 +460,29 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       return;
     }
 
-    if (!setupStoreName.trim()) {
-      setErrorMsg('Store Name is required.');
-      return;
-    }
-
-    if (!setupOwnerName.trim()) {
-      setErrorMsg('Store Owner Name is required.');
-      return;
-    }
-
     try {
       setLoading(true);
+
+      // Check if store name is already registered
+      const existingAccounts = await getAllStoreAccounts();
+      const duplicate = existingAccounts.find(
+        (a) => a.storeName.trim().toLowerCase() === cleanStoreName.toLowerCase()
+      );
+      if (duplicate) {
+        setErrorMsg(`A store with the name "${cleanStoreName}" is already registered. Please use a unique store name.`);
+        setLoading(false);
+        return;
+      }
+
       const creds = await createAdminAuthCredentials(setupPin);
       const newStoreId = `store-${Date.now()}`;
 
+      // Save new store settings
       const newStoreSettings: Settings = {
         ...DEFAULT_SETTINGS,
         storeId: newStoreId,
-        storeName: setupStoreName.trim(),
-        ownerName: setupOwnerName.trim(),
+        storeName: cleanStoreName,
+        ownerName: cleanOwnerName,
         adminPin: setupPin,
         adminPinHash: creds.adminPinHash,
         adminPinSalt: creds.adminPinSalt,
@@ -364,10 +494,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       await saveSettings(newStoreSettings, newStoreId);
 
+      // Save new store account
       const newStoreAccount: StoreAccount = {
         id: newStoreId,
-        storeName: setupStoreName.trim(),
-        ownerName: setupOwnerName.trim(),
+        storeName: cleanStoreName,
+        ownerName: cleanOwnerName,
         adminPinHash: creds.adminPinHash,
         adminPinSalt: creds.adminPinSalt,
         recoveryCodeHash: creds.recoveryCodeHash,
@@ -379,15 +510,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       await saveStoreAccount(newStoreAccount);
 
+      // Refresh store accounts in state
+      const updatedAccounts = await getAllStoreAccounts();
+      setStoreAccounts(updatedAccounts);
+
+      setRegisteredStoreId(newStoreId);
       setGeneratedRecoveryCode(creds.recoveryCode);
       setSetupStep('recoveryCode');
       setSetupConfirmedSaved(false);
-      setSelectedStoreId(newStoreId);
-      setActiveStoreSettings(newStoreSettings);
-      await loadStoreAccounts(newStoreId);
     } catch (err) {
-      console.error('Failed to complete Admin Setup:', err);
-      setErrorMsg('Failed to initialize Store Account credentials. Please try again.');
+      console.error('Failed to register store:', err);
+      setErrorMsg('Failed to create store credentials. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -413,7 +546,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `admin-recovery-code-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.download = `admin-recovery-code-${setupStoreName.replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -435,7 +568,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Admin Recovery Code — Mini Universal POS</title>
+          <title>Admin Recovery Code — ${setupStoreName}</title>
           <style>
             body { font-family: monospace; padding: 30px; line-height: 1.5; font-size: 13px; color: #000; background: #fff; }
             pre { white-space: pre-wrap; word-wrap: break-word; }
@@ -456,23 +589,61 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   const handleCompleteSetupAndLogin = () => {
     if (!setupConfirmedSaved) return;
-    setIsRegisteringNewStore(false);
+
+    try {
+      localStorage.setItem('pos_last_store_name', setupStoreName.trim());
+      localStorage.setItem('pos_last_store_id', registeredStoreId);
+    } catch {}
+
     onLoginSuccess({
       role: 'admin',
       id: 'admin',
-      name: activeStoreSettings.ownerName || setupOwnerName.trim() || 'Store Administrator',
-      storeId: selectedStoreId || 'store-main',
-      storeName: activeStoreSettings.storeName || setupStoreName.trim() || 'Store Account',
+      name: setupOwnerName.trim() || 'Store Administrator',
+      storeId: registeredStoreId || 'store-main',
+      storeName: setupStoreName.trim(),
       loginTime: new Date().toISOString(),
       isOfflineLogin: !isOnline,
     });
   };
 
   // ----------------------------------------------------
-  // FORGOT ADMIN PIN & OFFLINE RECOVERY FLOW
+  // CASHIER FORGOT PIN REQUEST
+  // ----------------------------------------------------
+  const handleSubmitCashierResetRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cashier = cashiers.find((c) => c.id === resetCashierId);
+    if (!cashier) return;
+
+    const newRequest: CashierResetRequest = {
+      id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      cashierId: cashier.id,
+      cashierName: cashier.name,
+      status: 'pending',
+      requestedAt: new Date().toISOString(),
+      notes: resetReason.trim() || 'Forgot PIN / Requested reset from login screen',
+      syncStatus: isOnline ? 'synced' : 'pending',
+    };
+
+    try {
+      await saveResetRequest(newRequest);
+      if (isOnline && onTriggerSync) {
+        onTriggerSync().catch(() => {});
+      }
+      setResetSuccessNotice(
+        `Reset request registered for ${cashier.name}. Please inform your Store Administrator to approve and receive a temporary PIN.`
+      );
+      setResetReason('');
+    } catch (err) {
+      console.error('Failed submitting reset request:', err);
+    }
+  };
+
+  // ----------------------------------------------------
+  // ADMIN FORGOT PIN & OFFLINE RECOVERY FLOW
   // ----------------------------------------------------
   const handleOpenForgotAdminModal = () => {
     setErrorMsg(null);
+    setRecoveryStoreName(enteredStoreName.trim());
     setRecoveryStep('enterCode');
     setRecoveryEnteredCode('');
     setRecoveryNewPin('');
@@ -499,22 +670,55 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     setLoading(true);
     try {
-      const currentStoreAcc = storeAccounts.find((s) => s.id === selectedStoreId);
-      const verifyTarget = {
-        recoveryCodeHash: currentStoreAcc?.recoveryCodeHash || activeStoreSettings.recoveryCodeHash,
-        recoveryCodeSalt: currentStoreAcc?.recoveryCodeSalt || activeStoreSettings.recoveryCodeSalt,
-        recoveryToken: activeStoreSettings.recoveryToken,
-      };
+      const accounts = await getAllStoreAccounts();
+      let targetStore: StoreAccount | null = null;
+      const cleanName = recoveryStoreName.trim().toLowerCase();
 
-      const isValid = await verifyRecoveryCode(recoveryEnteredCode, verifyTarget);
+      if (cleanName) {
+        targetStore = accounts.find((s) => s.storeName.trim().toLowerCase() === cleanName) || null;
+      } else if (accounts.length === 1) {
+        targetStore = accounts[0];
+      }
+
+      if (!targetStore) {
+        // Try matching recovery code across all stores
+        for (const s of accounts) {
+          const isValid = await verifyRecoveryCode(recoveryEnteredCode.trim(), {
+            recoveryCodeHash: s.recoveryCodeHash,
+            recoveryCodeSalt: s.recoveryCodeSalt,
+          });
+          if (isValid) {
+            targetStore = s;
+            setRecoveryStoreName(s.storeName);
+            break;
+          }
+        }
+      }
+
+      if (!targetStore) {
+        const nextAttempts = recoveryFailedAttempts + 1;
+        setRecoveryFailedAttempts(nextAttempts);
+        if (nextAttempts >= 5) {
+          setLockoutRemainingSecs(30);
+          setErrorMsg('Too many invalid attempts. Temporary security lockout active (30s).');
+        } else {
+          setErrorMsg(`Invalid Recovery Code or Store Name not found. (${5 - nextAttempts} attempts remaining)`);
+        }
+        setLoading(false);
+        return;
+      }
+
+      const isValid = await verifyRecoveryCode(recoveryEnteredCode.trim(), {
+        recoveryCodeHash: targetStore.recoveryCodeHash,
+        recoveryCodeSalt: targetStore.recoveryCodeSalt,
+      });
 
       if (!isValid) {
         const nextAttempts = recoveryFailedAttempts + 1;
         setRecoveryFailedAttempts(nextAttempts);
-
         if (nextAttempts >= 5) {
           setLockoutRemainingSecs(30);
-          setErrorMsg('Too many invalid attempts. Temporary security delay active (30s).');
+          setErrorMsg('Too many invalid attempts. Temporary security lockout active (30s).');
         } else {
           setErrorMsg(`Invalid Recovery Code. Please verify your code. (${5 - nextAttempts} attempts remaining)`);
         }
@@ -522,11 +726,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      // Valid recovery code: advance to new PIN creation
+      // Valid recovery code: proceed to Step 2
       setRecoveryFailedAttempts(0);
       setRecoveryStep('newPin');
     } catch (err) {
-      console.error('Recovery code validation error:', err);
+      console.error('Recovery validation error:', err);
       setErrorMsg('Failed to validate Recovery Code. Please try again.');
     } finally {
       setLoading(false);
@@ -549,47 +753,57 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     setLoading(true);
     try {
-      // 1. Generate new cryptographic credentials and replace old recovery code
+      const accounts = await getAllStoreAccounts();
+      const cleanName = recoveryStoreName.trim().toLowerCase();
+      let targetStore = accounts.find((s) => s.storeName.trim().toLowerCase() === cleanName) || null;
+
+      if (!targetStore && accounts.length === 1) {
+        targetStore = accounts[0];
+      }
+
+      if (!targetStore) {
+        setErrorMsg('Store account not found.');
+        setLoading(false);
+        return;
+      }
+
+      // 1. Generate replacement credentials
       const newCreds = await createAdminAuthCredentials(recoveryNewPin);
 
-      // 2. Update ONLY authentication records in settings for the active store
+      // 2. Update settings for this store
+      const currentSettings = await getSettings(targetStore.id);
       const updatedSettings: Settings = {
-        ...activeStoreSettings,
-        storeId: selectedStoreId,
+        ...currentSettings,
+        storeId: targetStore.id,
         adminPin: recoveryNewPin,
         adminPinHash: newCreds.adminPinHash,
         adminPinSalt: newCreds.adminPinSalt,
         recoveryCodeHash: newCreds.recoveryCodeHash,
         recoveryCodeSalt: newCreds.recoveryCodeSalt,
         recoveryCodeCreatedAt: newCreds.recoveryCodeCreatedAt,
-        recoveryToken: undefined,
-        failedRecoveryAttempts: 0,
-        recoveryLockoutUntil: undefined,
       };
 
-      await saveSettings(updatedSettings, selectedStoreId);
-      setActiveStoreSettings(updatedSettings);
+      await saveSettings(updatedSettings, targetStore.id);
 
-      const targetStoreAcc = storeAccounts.find((s) => s.id === selectedStoreId);
-      if (targetStoreAcc) {
-        const updatedAcc: StoreAccount = {
-          ...targetStoreAcc,
-          adminPinHash: newCreds.adminPinHash,
-          adminPinSalt: newCreds.adminPinSalt,
-          recoveryCodeHash: newCreds.recoveryCodeHash,
-          recoveryCodeSalt: newCreds.recoveryCodeSalt,
-          recoveryCodeCreatedAt: newCreds.recoveryCodeCreatedAt,
-        };
-        await saveStoreAccount(updatedAcc);
-        await loadStoreAccounts(selectedStoreId);
-      }
+      // 3. Update store account record
+      const updatedAcc: StoreAccount = {
+        ...targetStore,
+        adminPinHash: newCreds.adminPinHash,
+        adminPinSalt: newCreds.adminPinSalt,
+        recoveryCodeHash: newCreds.recoveryCodeHash,
+        recoveryCodeSalt: newCreds.recoveryCodeSalt,
+        recoveryCodeCreatedAt: newCreds.recoveryCodeCreatedAt,
+      };
+
+      await saveStoreAccount(updatedAcc);
+      await refreshStoreAccounts();
 
       setReplacementCode(newCreds.recoveryCode);
       setRecoveryStep('saveReplacement');
       setRecoveryConfirmedSaved(false);
     } catch (err) {
-      console.error('Failed to reset Admin PIN:', err);
-      setErrorMsg('Failed to save new Admin PIN. Please try again.');
+      console.error('Failed to save new PIN:', err);
+      setErrorMsg('Failed to update Admin PIN. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -608,8 +822,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const handleDownloadReplacementDocument = () => {
     const content = generateRecoveryCodeDocument(
       replacementCode,
-      activeStoreSettings.storeName,
-      activeStoreSettings.ownerName
+      recoveryStoreName,
+      'Store Administrator'
     );
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -630,14 +844,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
     const docText = generateRecoveryCodeDocument(
       replacementCode,
-      activeStoreSettings.storeName,
-      activeStoreSettings.ownerName
+      recoveryStoreName,
+      'Store Administrator'
     );
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Replacement Admin Recovery Code — Mini Universal POS</title>
+          <title>Replacement Admin Recovery Code</title>
           <style>
             body { font-family: monospace; padding: 30px; line-height: 1.5; font-size: 13px; color: #000; background: #fff; }
             pre { white-space: pre-wrap; word-wrap: break-word; }
@@ -656,15 +870,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     printWindow.document.close();
   };
 
-  const handleFinishRecoveryAndLogin = () => {
+  const handleFinishRecoveryAndLogin = async () => {
     if (!recoveryConfirmedSaved) return;
     setShowForgotAdminModal(false);
+
+    const accounts = await getAllStoreAccounts();
+    const cleanName = recoveryStoreName.trim().toLowerCase();
+    const targetStore = accounts.find((s) => s.storeName.trim().toLowerCase() === cleanName) || accounts[0];
+
+    try {
+      if (targetStore) {
+        localStorage.setItem('pos_last_store_name', targetStore.storeName);
+        localStorage.setItem('pos_last_store_id', targetStore.id);
+      }
+    } catch {}
+
     onLoginSuccess({
       role: 'admin',
       id: 'admin',
-      name: activeStoreSettings.ownerName || 'Store Administrator',
-      storeId: selectedStoreId || 'store-main',
-      storeName: activeStoreSettings.storeName || 'Store Account',
+      name: targetStore?.ownerName || 'Store Administrator',
+      storeId: targetStore?.id || 'store-main',
+      storeName: targetStore?.storeName || 'Store Account',
       loginTime: new Date().toISOString(),
       isOfflineLogin: !isOnline,
     });
@@ -672,55 +898,122 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   return (
     <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-slate-900 px-4 py-8 relative overflow-hidden select-none">
-      {/* Background Glows */}
+      {/* Background Ambient Glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Main Container */}
+      {/* Main Glassmorphism Card */}
       <div className="w-full max-w-md bg-slate-800/90 backdrop-blur-2xl border border-slate-700/80 rounded-3xl shadow-2xl p-6 md:p-8 relative z-10 space-y-6">
-        
-        {isRegisteringNewStore || storeAccounts.length === 0 ? (
-          // ==========================================
-          // REGISTER NEW STORE ACCOUNT FLOW
-          // ==========================================
+
+        {/* Brand Header */}
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-lg shadow-blue-500/30 p-2.5">
+            <img src="/icon.svg" alt="POS Logo" className="w-full h-full object-contain" />
+          </div>
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
+              Mini Universal POS
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Multi-Store Business Management • 100% Offline
+            </p>
+          </div>
+        </div>
+
+        {/* Top Segmented Navigation: Sign In vs Register Store */}
+        {storeAccounts.length > 0 && (
+          <div className="grid grid-cols-2 p-1 bg-slate-900/80 rounded-2xl border border-slate-700/60">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('login');
+                setErrorMsg(null);
+                setEnteredPin('');
+              }}
+              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all cursor-pointer ${
+                authMode === 'login'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <LogIn className="w-4 h-4" />
+              <span>Sign In</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('register');
+                setSetupStep('form');
+                setErrorMsg(null);
+                setSetupStoreName('');
+                setSetupOwnerName('');
+                setSetupPin('');
+                setSetupConfirmPin('');
+              }}
+              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all cursor-pointer ${
+                authMode === 'register'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Register Store</span>
+            </button>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* VIEW 1: REGISTER STORE ACCOUNT (New Store / Initial Setup) */}
+        {/* ========================================================= */}
+        {authMode === 'register' || storeAccounts.length === 0 ? (
           setupStep === 'form' ? (
             <form onSubmit={handleSetupSubmit} className="space-y-4 text-left">
               <div className="text-center pb-2">
                 <div className="inline-flex p-3 rounded-2xl bg-indigo-600/20 text-indigo-400 mb-2">
                   <Store className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-white">Register Store Account</h3>
+                <h3 className="text-lg font-bold text-white">
+                  {storeAccounts.length === 0 ? 'First-Time Store Setup' : 'Register New Store Account'}
+                </h3>
                 <p className="text-xs text-slate-400">
-                  Set up store profile and credentials for a new store account / branch
+                  {storeAccounts.length === 0
+                    ? 'Configure your store profile and administrator security credentials'
+                    : 'Add a new branch or separate store with independent credentials'}
                 </p>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Store Name / Branch</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Store Name / Branch
+                </label>
                 <input
                   type="text"
                   required
                   value={setupStoreName}
                   onChange={(e) => setSetupStoreName(e.target.value)}
-                  placeholder="e.g. Main Store / Branch 1"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
+                  placeholder="Enter Store Name (e.g. Branch 1)"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Store Owner / Admin Name</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Store Owner / Admin Name
+                </label>
                 <input
                   type="text"
                   required
                   value={setupOwnerName}
                   onChange={(e) => setSetupOwnerName(e.target.value)}
-                  placeholder="e.g. Store Owner Name"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-600 focus:outline-hidden focus:border-indigo-500"
+                  placeholder="Enter Store Owner / Admin Name"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Create Admin PIN (4–6 digits)</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Create Admin PIN (4–6 digits)
+                </label>
                 <div className="relative">
                   <input
                     type={showPin ? 'text' : 'password'}
@@ -742,7 +1035,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Confirm Admin PIN</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Confirm Admin PIN
+                </label>
                 <input
                   type={showPin ? 'text' : 'password'}
                   required
@@ -775,19 +1070,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setIsRegisteringNewStore(false);
+                      setAuthMode('login');
                       setErrorMsg(null);
                     }}
-                    className="text-[11px] font-semibold text-slate-400 hover:text-white hover:underline transition-all cursor-pointer"
+                    className="text-xs font-semibold text-slate-400 hover:text-white hover:underline transition-all cursor-pointer"
                   >
-                    ← Back to Registered Store Accounts
+                    ← Back to Sign In
                   </button>
                 </div>
               )}
             </form>
           ) : (
             // ==========================================
-            // SETUP: DEDICATED SAVE RECOVERY CODE SCREEN
+            // SETUP: DEDICATED RECOVERY CODE SAVE SCREEN
             // ==========================================
             <div className="space-y-4 text-center">
               <div className="inline-flex p-3 rounded-2xl bg-emerald-600/20 text-emerald-400">
@@ -795,10 +1090,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </div>
               <h3 className="text-lg font-bold text-white">Save Store Recovery Code</h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Admin PIN for <strong>{setupStoreName}</strong> has been configured. In case you ever forget your Admin PIN, this unique <strong>Recovery Code</strong> is the <strong>only way</strong> to reset your PIN offline.
+                Admin credentials for <strong>{setupStoreName}</strong> have been created. In case you ever forget your Admin PIN, this <strong>Recovery Code</strong> is the <strong>only way</strong> to reset your PIN offline.
               </p>
 
-              {/* Recovery Code Display Badge */}
+              {/* Recovery Code Display Card */}
               <div className="bg-slate-950 p-4 rounded-2xl border border-indigo-500/40 space-y-2">
                 <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
                   Official Admin Recovery Code (Offline Only)
@@ -807,11 +1102,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   {generatedRecoveryCode}
                 </div>
                 <p className="text-[10px] text-slate-400">
-                  This code will NOT be displayed again during normal POS usage.
+                  Store this code in a secure location. It will NOT be displayed again.
                 </p>
               </div>
 
-              {/* Action Buttons: Copy, Download, Print */}
+              {/* Copy, Download, Print Actions */}
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
@@ -848,7 +1143,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   className="mt-0.5 rounded border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer h-4 w-4"
                 />
                 <span className="text-[11px] text-slate-300 leading-snug">
-                  I confirm that I have copied, printed, or safely stored this Recovery Code offline.
+                  I confirm that I have safely copied, saved, or printed this Recovery Code offline.
                 </span>
               </label>
 
@@ -864,77 +1159,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
           )
         ) : (
-          // ==========================================
-          // MAIN LOCAL PIN LOCK & ROLE-BASED ACCESS
-          // ==========================================
+          // =========================================================
+          // VIEW 2: SIGN IN / LOGIN FLOW (Credentials-based)
+          // =========================================================
           <>
-            {/* Brand Header */}
-            <div className="text-center space-y-2">
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-lg shadow-blue-500/30 p-2.5">
-                <img src="/icon.svg" alt="POS Logo" className="w-full h-full object-contain" />
-              </div>
-              <div>
-                <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">
-                  {activeStoreSettings.storeName || 'Mini Universal POS'}
-                </h1>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Multi-Store Credentials & Role Access • 100% Offline
-                </p>
-              </div>
-            </div>
-
-            {/* Store Account Selector */}
-            <div className="bg-slate-900/90 border border-slate-700/80 rounded-2xl p-3 space-y-1.5 text-left">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                <span className="flex items-center gap-1.5">
-                  <Store className="w-4 h-4 text-indigo-400" />
-                  <span>Select Store Account / Branch</span>
-                </span>
-                {storeAccounts.length > 0 && (
-                  <span className="text-[10px] text-slate-400 font-normal">
-                    {storeAccounts.length} Registered {storeAccounts.length === 1 ? 'Store' : 'Stores'}
-                  </span>
-                )}
-              </div>
-              <select
-                value={selectedStoreId}
-                onChange={async (e) => {
-                  if (e.target.value === '__add_new__') {
-                    setIsRegisteringNewStore(true);
-                    setSetupStep('form');
-                    setSetupStoreName('');
-                    setSetupOwnerName('');
-                    setSetupPin('');
-                    setSetupConfirmPin('');
-                    setErrorMsg(null);
-                  } else {
-                    const newId = e.target.value;
-                    setSelectedStoreId(newId);
-                    setEnteredPin('');
-                    setErrorMsg(null);
-                    const sets = await getSettings(newId);
-                    setActiveStoreSettings(sets);
-                    const cashList = await getAllCashiers(newId);
-                    setCashiers(cashList);
-                    if (cashList.length > 0) {
-                      setSelectedCashierId(cashList[0].id);
-                    } else {
-                      setSelectedCashierId('');
-                    }
-                  }
-                }}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl py-2 px-3 text-xs md:text-sm font-semibold text-white focus:outline-hidden focus:border-indigo-500 cursor-pointer"
-              >
-                {storeAccounts.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    🏢 {s.storeName || 'Store Account'} ({s.ownerName || 'Admin'})
-                  </option>
-                ))}
-                <option value="__add_new__">+ Register New Store Account...</option>
-              </select>
-            </div>
-
-            {/* Role Segmented Switcher */}
+            {/* Role Access Switcher: Cashier vs Admin */}
             <div className="grid grid-cols-2 p-1 bg-slate-900/80 rounded-2xl border border-slate-700/60">
               <button
                 type="button"
@@ -971,11 +1200,37 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
 
             {/* Login Form */}
-            <div className="space-y-4">
+            <div className="space-y-4 text-left">
+              {/* Field 1: Store Name / Branch Input */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Store Name / Branch</span>
+                  </label>
+                  {roleTab === 'admin' && (
+                    <span className="text-[10px] text-slate-500">
+                      Optional if PIN is unique
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={enteredStoreName}
+                  onChange={(e) => {
+                    setEnteredStoreName(e.target.value);
+                    setErrorMsg(null);
+                  }}
+                  placeholder="Enter Store Name (e.g. Branch 1)"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Role-specific fields */}
               {roleTab === 'cashier' ? (
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Select Cashier Account
+                    Select Cashier Profile
                   </label>
                   {cashiers.length > 0 ? (
                     <select
@@ -994,28 +1249,30 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                       ))}
                     </select>
                   ) : (
-                    <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-900/50 text-xs text-amber-300">
-                      No cashier accounts registered yet. The Store Administrator can add cashier profiles in Admin Settings.
+                    <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-900/50 text-xs text-amber-300">
+                      {enteredStoreName.trim()
+                        ? 'No cashiers found for this store. Admin can add cashier profiles in Admin Settings.'
+                        : 'Enter your Store Name above to load cashier profiles.'}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-900/50 text-xs text-indigo-300 flex items-center justify-between">
+                <div className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-900/50 text-xs text-indigo-300 flex items-center justify-between">
                   <div>
                     <span className="font-bold block text-white">Full Administrator Access</span>
-                    <span>Manage products, cashiers, stock, reports, and store data</span>
+                    <span>Manage products, cashiers, stock, reports, and settings</span>
                   </div>
                   <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
                 </div>
               )}
 
-              {/* PIN Input Display */}
+              {/* Field 2: PIN Input */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-slate-300">
                     {roleTab === 'cashier' ? 'Cashier Security PIN' : 'Admin Security PIN'}
                   </label>
-                  {roleTab === 'admin' && (
+                  {roleTab === 'admin' ? (
                     <button
                       type="button"
                       onClick={handleOpenForgotAdminModal}
@@ -1023,8 +1280,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     >
                       Forgot Admin PIN?
                     </button>
-                  )}
-                  {roleTab === 'cashier' && (
+                  ) : (
                     <button
                       type="button"
                       onClick={() => {
@@ -1041,8 +1297,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <div className="relative">
                   <input
                     type={showPin ? 'text' : 'password'}
-                    disabled={roleTab === 'cashier' && cashiers.length === 0}
                     value={enteredPin}
+                    maxLength={6}
                     onChange={(e) => {
                       setEnteredPin(e.target.value);
                       setErrorMsg(null);
@@ -1053,9 +1309,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                         else handleAdminLogin();
                       }
                     }}
-                    placeholder={roleTab === 'cashier' && cashiers.length === 0 ? 'Disabled' : 'Enter PIN'}
+                    placeholder="••••"
                     autoFocus
-                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3 px-4 text-center text-xl font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-blue-500 shadow-inner disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3 px-4 text-center text-xl font-mono tracking-widest text-white placeholder-slate-600 focus:outline-hidden focus:border-blue-500 shadow-inner"
                   />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                     <button
@@ -1068,7 +1324,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     {enteredPin.length > 0 && (
                       <button
                         type="button"
-                        onClick={handlePinClear}
+                        onClick={handleKeypadClear}
                         className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-md bg-slate-800 cursor-pointer"
                       >
                         Clear
@@ -1078,7 +1334,42 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </div>
               </div>
 
-              {/* Error Message */}
+              {/* On-screen Numeric Keypad for fast touchscreen POS operation */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                  <button
+                    key={digit}
+                    type="button"
+                    onClick={() => handleKeypadPress(digit)}
+                    className="py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-700/60 active:scale-95 text-white font-mono font-bold text-lg transition shadow-xs cursor-pointer"
+                  >
+                    {digit}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleKeypadClear}
+                  className="py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-700/60 active:scale-95 text-slate-400 hover:text-white font-bold text-xs uppercase tracking-wider transition cursor-pointer"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleKeypadPress('0')}
+                  className="py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-700/60 active:scale-95 text-white font-mono font-bold text-lg transition shadow-xs cursor-pointer"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  onClick={handleKeypadBackspace}
+                  className="py-3 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:bg-slate-700/60 active:scale-95 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+                >
+                  <Delete className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Error Alert */}
               {errorMsg && (
                 <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/80 text-rose-300 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
@@ -1086,10 +1377,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </div>
               )}
 
-              {/* Submit Action Button */}
+              {/* Main Submit Action */}
               <button
                 type="button"
-                disabled={(roleTab === 'cashier' && cashiers.length === 0) || loading}
+                disabled={loading}
                 onClick={roleTab === 'cashier' ? () => handleCashierLogin() : () => handleAdminLogin()}
                 className={`w-full py-3.5 px-4 rounded-2xl font-bold text-white text-sm shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   roleTab === 'cashier'
@@ -1097,14 +1388,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
                 }`}
               >
-                <span>{roleTab === 'cashier' ? 'Unlock POS Terminal' : 'Unlock Admin Dashboard'}</span>
+                <span>
+                  {loading
+                    ? 'Authenticating...'
+                    : roleTab === 'cashier'
+                    ? 'Unlock POS Terminal'
+                    : 'Unlock Admin Dashboard'}
+                </span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Footer Hint */}
-            <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80 space-y-1.5">
-              <div>Offline Local PIN Lock • Protected Business Records</div>
+            {/* Footer Notice */}
+            <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80 space-y-1">
+              <div>Multi-Store Credentials • Protected Offline Database</div>
             </div>
           </>
         )}
@@ -1144,8 +1441,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     Offline Local Validation
                   </p>
                   <p>
-                    Enter the Recovery Code generated during setup (e.g. <code>RC-XXXX-XXXX-XXXX</code>). Your business records and sales history will remain completely safe.
+                    Enter the Recovery Code generated when your store was registered (e.g. <code>RC-XXXX-XXXX-XXXX</code>). All business records remain completely safe.
                   </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Store Name (Optional if unique)
+                  </label>
+                  <input
+                    type="text"
+                    value={recoveryStoreName}
+                    onChange={(e) => setRecoveryStoreName(e.target.value)}
+                    placeholder="Enter Store Name"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2 px-3 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
+                  />
                 </div>
 
                 <div>
@@ -1158,12 +1468,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     disabled={lockoutRemainingSecs > 0}
                     value={recoveryEnteredCode}
                     onChange={(e) => {
-                      setRecoveryEnteredCode(e.target.value);
+                      setRecoveryEnteredCode(e.target.value.toUpperCase());
                       setErrorMsg(null);
                     }}
                     placeholder="RC-XXXX-XXXX-XXXX"
-                    autoFocus
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-base font-mono tracking-wider text-amber-300 uppercase placeholder-slate-600 focus:outline-hidden focus:border-amber-500 disabled:opacity-50"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-2.5 px-3 text-center text-sm font-mono tracking-wider text-amber-300 placeholder-slate-600 focus:outline-hidden focus:border-amber-500 uppercase disabled:opacity-40"
                   />
                 </div>
 
@@ -1174,23 +1483,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   </div>
                 )}
 
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowForgotAdminModal(false)}
-                    className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 text-xs font-semibold hover:bg-slate-700"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading || lockoutRemainingSecs > 0}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 font-bold text-white text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <span>{loading ? 'Verifying Code...' : 'Verify Recovery Code'}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  type="submit"
+                  disabled={loading || lockoutRemainingSecs > 0}
+                  className="w-full py-3 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 font-bold text-white text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>{loading ? 'Verifying Code...' : 'Verify Offline Recovery Code'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
               </form>
             )}
 
@@ -1268,7 +1568,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <div className="inline-flex p-3 rounded-2xl bg-emerald-600/20 text-emerald-400">
                   <CheckCircle2 className="w-7 h-7" />
                 </div>
-                <h3 className="font-bold text-lg text-white">Save Your Replacement Recovery Code</h3>
+                <h3 className="font-bold text-lg text-white">Save Replacement Recovery Code</h3>
                 <p className="text-xs text-slate-300 leading-relaxed">
                   Your new Admin PIN is saved! Your previous Recovery Code has been <strong>invalidated</strong>. Save your new replacement code below:
                 </p>
@@ -1282,7 +1582,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Actions: Copy, Download, Print */}
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
@@ -1310,7 +1609,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   </button>
                 </div>
 
-                {/* Mandatory Confirmation Checkbox */}
                 <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 text-left cursor-pointer hover:border-slate-600 transition">
                   <input
                     type="checkbox"

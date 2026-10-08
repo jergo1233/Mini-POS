@@ -1047,7 +1047,7 @@ export async function executeFullRestore(
   if (parsed.settings) {
     const safeSettingsToSave: Settings = {
       ...parsed.settings,
-      adminPin: currentSettings.adminPin || parsed.settings.adminPin || '1234',
+      adminPin: currentSettings.adminPin || parsed.settings.adminPin || '',
       adminPinHash: currentSettings.adminPinHash,
       adminPinSalt: currentSettings.adminPinSalt,
       recoveryCodeHash: currentSettings.recoveryCodeHash,

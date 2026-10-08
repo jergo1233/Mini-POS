@@ -122,8 +122,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       return;
     }
 
+    const targetPin = (adminPin || settings.adminPin || '').trim();
+    if (!targetPin) {
+      setGenError('Admin PIN must be configured first.');
+      return;
+    }
+
     try {
-      const creds = await createAdminAuthCredentials(adminPin || settings.adminPin || '1234');
+      const creds = await createAdminAuthCredentials(targetPin);
       const updated: Settings = {
         ...settings,
         recoveryCodeHash: creds.recoveryCodeHash,

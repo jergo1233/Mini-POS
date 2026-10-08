@@ -131,7 +131,8 @@ export async function verifyAdminPin(
     return cleanPin === settings.adminPin;
   }
 
-  return cleanPin === '1234';
+  // If no credentials configured, reject
+  return false;
 }
 
 /**

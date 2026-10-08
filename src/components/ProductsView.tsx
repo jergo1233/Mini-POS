@@ -45,6 +45,7 @@ import {
 } from '../db/indexedDB';
 import { BarcodeRenderer } from './BarcodeRenderer';
 import { BarcodeModal } from './BarcodeModal';
+import { verifyAdminPin } from '../utils/cryptoAuth';
 
 interface ProductsViewProps {
   products: Product[];
@@ -182,10 +183,10 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     handleOpenQuickRestock(product);
   };
 
-  const handleVerifyPin = (e: React.FormEvent) => {
+  const handleVerifyPin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const correctPin = settings.adminPin || '1234';
-    if (pinInput === correctPin || pinInput === '1234') {
+    const isMatch = await verifyAdminPin(pinInput, settings);
+    if (isMatch) {
       handleSetAdminUnlocked(true);
       setShowPinModal(false);
       setPinInput('');
