@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Lock, Unlock, AlertCircle, LogOut, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 import { AuthSession } from './LoginScreen';
 import { Cashier, Settings, getAllCashiers, getSettings } from '../db/indexedDB';
@@ -104,7 +105,7 @@ export const AutoLockModal: React.FC<AutoLockModalProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 backdrop-blur-xl p-4 animate-in fade-in select-none">
       <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-center space-y-5">
         <div className="mx-auto w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shadow-inner">
@@ -223,6 +224,7 @@ export const AutoLockModal: React.FC<AutoLockModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
