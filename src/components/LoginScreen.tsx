@@ -878,7 +878,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               Mini Universal POS
             </h1>
             <p className="text-xs text-slate-400 mt-0.5">
-              IndexedDB Storage • 100% Offline
+              100% Offline POS System
             </p>
           </div>
         </div>
@@ -1289,7 +1289,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
             {/* Footer Notice */}
             <div className="pt-2 text-center text-[11px] text-slate-500 border-t border-slate-800/80 space-y-1">
-              <div>IndexedDB Encrypted Credentials • Offline Operations</div>
+              <div>Encrypted Local Credentials • Offline Operations</div>
             </div>
           </>
         )}

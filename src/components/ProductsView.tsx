@@ -1357,9 +1357,10 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
       {/* --- ADD / EDIT PRODUCT MODAL --- */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm overflow-y-auto">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 my-8">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-3 sm:p-4 backdrop-blur-sm">
+          <div className="min-h-full flex items-center justify-center p-2 sm:p-4 text-left">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-5 sm:p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 my-auto transform transition-all">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
                 <div className={`p-2 rounded-xl ${
                   editingProduct 
@@ -1718,6 +1719,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
             </form>
           </div>
         </div>
+      </div>
       )}
 
       {/* Barcode Print Modal */}
