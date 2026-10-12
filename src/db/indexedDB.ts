@@ -597,6 +597,21 @@ export async function saveTransaction(transaction: Transaction): Promise<void> {
   });
 }
 
+export async function getTransaction(id: string, dbInstance?: IDBDatabase): Promise<Transaction | undefined> {
+  const db = dbInstance || (await openDB());
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction('transactions', 'readonly');
+      const store = tx.objectStore('transactions');
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    } catch (e) {
+      resolve(undefined);
+    }
+  });
+}
+
 /**
  * Process a refund for a transaction.
  * 1. Mark transaction as refunded.
@@ -607,15 +622,18 @@ export async function processRefund(
   transactionId: string,
   user: string,
   role: 'admin' | 'cashier'
-): Promise<void> {
+): Promise<Transaction> {
   const db = await openDB();
   
-  // 1. Get the transaction
-  const txs = await getAllTransactions();
-  const transaction = txs.find(t => t.id === transactionId);
+  // 1. Get the transaction directly by ID or via all transactions
+  let transaction = await getTransaction(transactionId, db);
+  if (!transaction) {
+    const txs = await getAllTransactions(db);
+    transaction = txs.find(t => t.id === transactionId);
+  }
 
   if (!transaction) throw new Error('Transaction not found');
-  if (transaction.status === 'refunded') throw new Error('Transaction already refunded');
+  if (transaction.status === 'refunded') throw new Error('Transaction is already marked as refunded');
 
   // 2. Mark as refunded
   const updatedTx: Transaction = { 
@@ -633,45 +651,54 @@ export async function processRefund(
   });
 
   // 3. Return items to stock and log movements
-  for (const item of transaction.items) {
-    const product = await getProduct(item.productId, db);
-    if (product) {
-      const stockBefore = product.stock;
-      const stockAfter = stockBefore + item.quantity;
-      
-      const updatedProduct: Product = {
-        ...product,
-        stock: stockAfter,
-        updatedAt: new Date().toISOString(),
-        syncStatus: 'pending'
-      };
-      await saveProduct(updatedProduct, db);
+  if (Array.isArray(transaction.items)) {
+    for (const item of transaction.items) {
+      if (!item.productId) continue;
+      const product = await getProduct(item.productId, db);
+      if (product) {
+        const stockBefore = typeof product.stock === 'number' ? product.stock : 0;
+        const stockAfter = stockBefore + (Number(item.quantity) || 1);
+        
+        const updatedProduct: Product = {
+          ...product,
+          stock: stockAfter,
+          updatedAt: new Date().toISOString(),
+          syncStatus: 'pending'
+        };
+        await saveProduct(updatedProduct, db);
 
-      const movementId = `sm-refund-${transaction.id}-${item.productId}-${Math.random().toString(36).slice(2, 6)}`;
-      const movement: StockMovement = {
-        id: movementId,
-        productId: item.productId,
-        productName: item.name,
-        quantityChange: item.quantity,
-        type: 'return',
-        user,
-        role,
-        timestamp: new Date().toISOString(),
-        syncStatus: 'pending',
-        referenceId: transaction.receiptNo,
-        stockBefore,
-        stockAfter,
-      };
-      
-      await new Promise<void>((resolve, reject) => {
-        const moveTx = db.transaction('stock_movements', 'readwrite');
-        const store = moveTx.objectStore('stock_movements');
-        const req = store.put(movement);
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
-      });
+        const movementId = `sm-refund-${transaction.id}-${item.productId}-${Math.random().toString(36).slice(2, 6)}`;
+        const movement: StockMovement = {
+          id: movementId,
+          productId: item.productId,
+          productName: item.name,
+          quantityChange: Number(item.quantity) || 1,
+          type: 'return',
+          user: user || 'Staff',
+          role: role || 'cashier',
+          timestamp: new Date().toISOString(),
+          syncStatus: 'pending',
+          referenceId: transaction.receiptNo,
+          stockBefore,
+          stockAfter,
+        };
+        
+        await new Promise<void>((resolve) => {
+          try {
+            const moveTx = db.transaction('stock_movements', 'readwrite');
+            const store = moveTx.objectStore('stock_movements');
+            const req = store.put(movement);
+            req.onsuccess = () => resolve();
+            req.onerror = () => resolve();
+          } catch {
+            resolve();
+          }
+        });
+      }
     }
   }
+
+  return updatedTx;
 }
 
 // --- Stock Movements ---

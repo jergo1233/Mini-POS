@@ -20,7 +20,9 @@ import {
   Users,
   X,
   Printer,
-  Database
+  Database,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { Product, Category, CartItem, Settings, Transaction, TransactionItem, saveTransaction, Customer, saveCustomer } from '../db/indexedDB';
 import { CameraScannerModal } from './CameraScannerModal';
@@ -67,6 +69,77 @@ export const POSView: React.FC<POSViewProps> = ({
   const [custAddress, setCustAddress] = useState('');
   const [custDescription, setCustDescription] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const categoryScrollRef = useRef<HTMLDivElement | null>(null);
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftRef = useRef(0);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  // Check scroll position to enable/disable arrow buttons
+  const checkCategoryScroll = () => {
+    const el = categoryScrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  };
+
+  useEffect(() => {
+    const el = categoryScrollRef.current;
+    if (!el) return;
+    checkCategoryScroll();
+    el.addEventListener('scroll', checkCategoryScroll);
+    window.addEventListener('resize', checkCategoryScroll);
+    return () => {
+      el.removeEventListener('scroll', checkCategoryScroll);
+      window.removeEventListener('resize', checkCategoryScroll);
+    };
+  }, [categories, products]);
+
+  // Support mouse wheel horizontal scrolling on desktop
+  useEffect(() => {
+    const el = categoryScrollRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
+  // Desktop mouse drag-to-scroll swipe handlers
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!categoryScrollRef.current) return;
+    isDraggingRef.current = true;
+    startXRef.current = e.pageX - categoryScrollRef.current.offsetLeft;
+    scrollLeftRef.current = categoryScrollRef.current.scrollLeft;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || !categoryScrollRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - categoryScrollRef.current.offsetLeft;
+    const walk = (x - startXRef.current) * 1.5;
+    categoryScrollRef.current.scrollLeft = scrollLeftRef.current - walk;
+  };
+
+  const handleMouseUpOrLeave = () => {
+    isDraggingRef.current = false;
+  };
+
+  const scrollCategories = (direction: 'left' | 'right') => {
+    if (categoryScrollRef.current) {
+      const offset = direction === 'left' ? -260 : 260;
+      categoryScrollRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
 
   // USB Barcode Scanner listener (keyboard input accumulation)
   useEffect(() => {
@@ -118,10 +191,15 @@ export const POSView: React.FC<POSViewProps> = ({
     const q = searchQuery.trim().toLowerCase();
     if (!q) return;
 
-    // Check exact barcode or SKU match
-    const matched = products.find(p => p.barcode.toLowerCase() === q || p.sku.toLowerCase() === q);
+    // Check exact barcode, SKU, or name match
+    const matched = products.find(
+      p => p.barcode.toLowerCase() === q || p.sku.toLowerCase() === q || p.name.toLowerCase() === q
+    );
     if (matched) {
       addToCart(matched);
+      setSearchQuery('');
+    } else if (filteredProducts.length === 1) {
+      addToCart(filteredProducts[0]);
       setSearchQuery('');
     }
   };
@@ -335,48 +413,68 @@ export const POSView: React.FC<POSViewProps> = ({
           }`}
         >
           {/* Search, Barcode Scan, & Layout View Toggles */}
-          <div className="flex flex-col sm:flex-row gap-2.5 pb-3.5 border-b border-slate-100 dark:border-slate-800 shrink-0">
-            <form onSubmit={handleSearchSubmit} className="flex-1 relative">
-              <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+          <div className="space-y-3 pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            {/* Top Row: Full-Width Prominent High-Visibility Search Bar */}
+            <form onSubmit={handleSearchSubmit} className="relative w-full">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-600 dark:text-blue-400 pointer-events-none" />
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search products by name, SKU or barcode..."
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 pl-10 pr-4 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-800/90 pl-11 pr-12 py-3 text-sm sm:text-base font-semibold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-xs"
               />
+              {/* Right actions: Clear button */}
+              {searchQuery && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      searchInputRef.current?.focus();
+                    }}
+                    className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </form>
 
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Camera Scanner Button */}
-              <button
-                type="button"
-                onClick={() => setShowCameraScanner(true)}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 active:scale-98 transition shadow-md shadow-blue-500/20 shrink-0"
-              >
-                <Camera className="w-4 h-4" />
-                <span>Scan Camera</span>
-              </button>
+            {/* Bottom Row: Action Controls (Camera Scanner, Print Barcodes, Grid/List Toggles) */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {/* Camera Scanner Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowCameraScanner(true)}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 px-3.5 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-semibold text-white transition shadow-md shadow-blue-500/20 shrink-0 cursor-pointer"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Scan Camera</span>
+                </button>
 
-              {/* Print Barcodes Button */}
-              <button
-                type="button"
-                onClick={() => setShowBarcodeModal(true)}
-                className="flex items-center justify-center gap-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 px-3.5 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition shrink-0"
-                title="Print Barcodes"
-              >
-                <Printer className="w-4 h-4 text-blue-600" />
-                <span className="hidden sm:inline">Print Barcodes</span>
-              </button>
+                {/* Print Barcodes Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowBarcodeModal(true)}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-3 py-2 sm:px-3.5 sm:py-2.5 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 transition shrink-0 cursor-pointer border border-slate-200/60 dark:border-slate-700/60"
+                  title="Print Barcodes"
+                >
+                  <Printer className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span>Print Barcodes</span>
+                </button>
+              </div>
 
               {/* Grid vs List Layout Toggle */}
-              <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
                 <button
                   type="button"
                   onClick={() => setViewLayout('grid')}
                   title="Grid View"
-                  className={`p-1.5 rounded-xl transition ${
+                  className={`p-1.5 rounded-lg transition cursor-pointer ${
                     viewLayout === 'grid'
                       ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -388,7 +486,7 @@ export const POSView: React.FC<POSViewProps> = ({
                   type="button"
                   onClick={() => setViewLayout('list')}
                   title="List View"
-                  className={`p-1.5 rounded-xl transition ${
+                  className={`p-1.5 rounded-lg transition cursor-pointer ${
                     viewLayout === 'list'
                       ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -400,34 +498,77 @@ export const POSView: React.FC<POSViewProps> = ({
             </div>
           </div>
 
-          {/* Categories Bar */}
-          <div className="flex gap-2 overflow-x-auto py-3 no-scrollbar shrink-0">
+          {/* Categories Bar with Desktop Scroll Buttons & Horizontal Mouse Wheel / Drag Support */}
+          <div className="relative flex items-center gap-1.5 py-2.5 shrink-0 border-b border-slate-100 dark:border-slate-800">
+            {/* Scroll Left Button (Desktop & Tablet) */}
             <button
-              onClick={() => setSelectedCategoryId('all')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition duration-150 ${
-                selectedCategoryId === 'all'
-                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              type="button"
+              onClick={() => scrollCategories('left')}
+              disabled={!canScrollLeft}
+              className={`hidden sm:flex items-center justify-center h-8 w-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-2xs transition-all shrink-0 cursor-pointer ${
+                !canScrollLeft
+                  ? 'opacity-30 cursor-not-allowed'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-700 hover:scale-105 active:scale-95'
               }`}
+              title="Scroll categories left"
             >
-              All Items ({products.length})
+              <ChevronLeft className="w-4 h-4" />
             </button>
-            {categories.map(cat => {
-              const count = products.filter(p => p.categoryId === cat.id).length;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategoryId(cat.id)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition duration-150 ${
-                    selectedCategoryId === cat.id
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {cat.name} ({count})
-                </button>
-              );
-            })}
+
+            {/* Scrollable Category Pills Container */}
+            <div
+              ref={categoryScrollRef}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUpOrLeave}
+              onMouseLeave={handleMouseUpOrLeave}
+              className="flex-1 flex gap-2 overflow-x-auto py-1 scroll-smooth select-none cursor-grab active:cursor-grabbing no-scrollbar"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <button
+                type="button"
+                onClick={() => setSelectedCategoryId('all')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition duration-150 shrink-0 cursor-pointer ${
+                  selectedCategoryId === 'all'
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                All Items ({products.length})
+              </button>
+              {categories.map((cat) => {
+                const count = products.filter((p) => p.categoryId === cat.id).length;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedCategoryId(cat.id)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition duration-150 shrink-0 cursor-pointer ${
+                      selectedCategoryId === cat.id
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {cat.name} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Scroll Right Button (Desktop & Tablet) */}
+            <button
+              type="button"
+              onClick={() => scrollCategories('right')}
+              disabled={!canScrollRight}
+              className={`hidden sm:flex items-center justify-center h-8 w-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-2xs transition-all shrink-0 cursor-pointer ${
+                !canScrollRight
+                  ? 'opacity-30 cursor-not-allowed'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-700 hover:scale-105 active:scale-95'
+              }`}
+              title="Scroll categories right"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Product Items Display Area */}
